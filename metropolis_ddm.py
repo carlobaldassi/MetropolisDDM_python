@@ -253,10 +253,62 @@ def explo_matrix_input(n, ro, alt):
 
 ## DDM sampling
 
+class DDMSampler:
+    """
+    A class that helps sampling response times and a choice outcomes in a
+    drift-diffusion-model decision process, given a vector of utilities
+    and the decision thresholds. It works essentially like a cached version
+    of `ddm_sample`.
+
+    The constructor takes the following arguments:
+
+    * `u`: a vector of utilities
+    * `lb`: threshold for the incumbents
+    * `ub`: threshold for the candidated
+    * `cache_size`: the number of samples to cache for each combination of
+      the values in `u`.
+
+    It provides one relevant method, `sample(a, b)`.
+    """
+    def __init__(self, u, lb, ub, cache_size = 50):
+        if cache_size <= 0:
+            raise ValueError('invalid `cache_size`, must be positive, given %i' % cache_size)
+        c = np.sqrt(2)
+        n = len(u)
+        self.mu = [np.array([(u[a] - u[b]) / c]) for a in range(n) for b in range(n)]
+        self.n = n
+        self.lb, self.ub = np.array([lb / c]), np.array([ub / c])
+        self.ind = [cache_size for a in range(n) for b in range(n)]
+        self.cache_size = cache_size
+
+    def refresh(self, a, b):
+        n = self.n
+        k = a * n + b
+        mu = self.mu[k]
+        lb, ub, cache_size = self.lb, self.ub, self.cache_size
+        dt = 0.000000001 # irrelevant
+        self.RT, self.CO = dm.rand_asym(mu, -lb, ub, dt, cache_size)
+        self.ind[k] = 0
+
+    def sample(self, a, b):
+        """
+        Returns a sample (a response time and a choice outcome) for two items `a`
+        and `b` (two integers, the incumbent and the candidate).
+        Basically the same as `ddm_sample`.
+        """
+        n = self.n
+        k = a * n + b
+        if self.ind[k] == self.cache_size:
+            self.refresh(a, b)
+            assert self.ind[k] == 0
+        RT, CO = self.RT[self.ind[k]], self.CO[self.ind[k]]
+        self.ind[k] += 1
+        return RT, CO
+
 def ddm_sample(u_a, u_b, lbarrier, ubarrier):
     """
     Sample a response time and a choice outcome in a drift-diffusion-model decision process, given
-    the utilities and the decision thresholds.
+    the utilities and the decision thresholds. See also `DDMSampler` for a cached version.
 
     Inputs
     ------
@@ -270,19 +322,19 @@ def ddm_sample(u_a, u_b, lbarrier, ubarrier):
     -------
 
     * `RT`: a `float` representing the response time
-    * `CO`: a `bool` representing the choice: `True` if the proposal is accepted (`b` was chosen);
-      `False` otherwise (`a` was chosen)
+    * `CO`: a `bool` representing the choice outcome: `True` if the proposal is accepted
+      (`b` was chosen), `False` otherwise (`a` was chosen)
     """
     mu_ab = np.array([(u_a - u_b) / np.sqrt(2)])
     lbound_normarray = np.array([lbarrier / np.sqrt(2)])
     ubound_normarray = np.array([ubarrier / np.sqrt(2)])
-    dt = 0.000000001
+    dt = 0.000000001 # irrelevant
 
     RT, CO = dm.rand_asym(mu_ab, -lbound_normarray, ubound_normarray, dt, 1)
 
     return RT[0], CO[0]
 
-def _check_metr_args(u, lbarrier, ubarrier, t, em):
+def _check_metr_args1(u, lbarrier, ubarrier):
     if not isinstance(u, np.ndarray) or u.dtype != float:
         try:
             u = np.array(u, dtype=float)
@@ -290,9 +342,7 @@ def _check_metr_args(u, lbarrier, ubarrier, t, em):
             raise TypeError('invalid utilities list `u`, unable to convert to `float` array')
     if u.ndim != 1:
         raise ValueError('invalid utilities list `u`, should be 1-dimensional')
-
-    n = len(u)
-    if n == 0:
+    if len(u) == 0:
         raise ValueError('empty utilities list')
 
     if not (isinstance(lbarrier, (int,float)) and isinstance(ubarrier, (int,float))):
@@ -301,16 +351,18 @@ def _check_metr_args(u, lbarrier, ubarrier, t, em):
     if lbarrier <= 0 or ubarrier <= 0:
         raise ValueError('thresholds lbarrier,ubarrier must be positive, given: %f,%f' % (lbarrier, ubarrier))
 
+    return u, lbarrier, ubarrier
+
+def _check_metr_args2(n, t, em):
+    assert isinstance(n, int) and n > 0
+
     if not isinstance(t, (int,float)):
         raise TypeError('time limit `t` must be an int or a float, given: %s' % cname(t))
     t = float(t)
     if t <= 0:
         raise ValueError('time limit `t` must be positive, given: %f' % t)
 
-    choice_count = np.zeros(n, dtype=int) # choice count vector
-
-    unif = (em is None)
-    if not unif:
+    if em is not None:
         if not isinstance(em, np.ndarray) or em.dtype != float:
             try:
                 em = np.array(em)
@@ -323,16 +375,59 @@ def _check_metr_args(u, lbarrier, ubarrier, t, em):
         if np.any(np.abs(em.sum(axis=0) - 1.0) > 1e-8):
             raise ValueError('exploration matrix columns are not normalized')
 
-    return u, lbarrier, ubarrier, t, em
+    return t, em
 
 
-def metropolis_ddm(u, lbarrier, ubarrier, t, em, *, check_args = True):
+def timed_metropolis(n, sampler, t, em, *, check_args = True):
     """
-    Simulate a multiple-choice decision process as a sequence of pariwise comparisons,
-    each of which is taken according to the drift-diffusion model. At each step, a
-    decision is made between an incumbent and a candidate; the candidates are
+    Simulate a multiple-choice decision process as a sequence of pariwise comparisons.
+    At each step, a decision is made between an incumbent and a candidate; the candidates are
     proposed according to an exploration matrix; the final choice is determined
     by the current incumbent when the total available time has elapsed.
+
+    Inputs
+    ------
+
+    * `n`: the number of possible choices.
+    * `sampler`: this must be a function (or an object) that takes two integer arguments (an
+      incumbent and a candidate, both between `0` and `n-1`) and returns two items: a response
+      time (a `float`) and a `bool` determining whether the proposal was accepted.
+    * `t`: time limit
+    * `em`: exploration matrix. If `None`, candidates are extracted uniformly at random.
+      Otherwise, it should be a `n`×`n` matrix.
+    * `check_args`: (keyword-only argument) whether to check/convert the arguments, defaults to
+      `True`.
+
+    Output
+    ------
+
+    The output is the index corresponding to the final choice, an `int` between `0` and `n-1`.
+    """
+    if check_args:
+        t, em =  _check_metr_args2(n, t, em)
+
+    if em is None:
+        proposal = lambda b: uniform_proposal(n, b)
+    else:
+        proposal = lambda b: nonuniform_proposal(em, b)
+
+    s = 0.0                  # clock
+    b = np.random.randint(n) # initial choice
+    while True:
+        a = proposal(b)
+        RT, CO = sampler(a, b)
+        s += RT
+        if s > t:
+            break
+        elif CO:
+            b = a
+    return b
+
+
+def metropolis_ddm_hist(u, lbarrier, ubarrier, t, em = None, num_samples = 10**3, cached_sampler = True):
+    """
+    Call `timed_metropolis` repeatedly, using a drift-diffusion model as the pairwise sampler,
+    and return a count of the occurrences of each outcome.
 
     Inputs
     ------
@@ -342,65 +437,39 @@ def metropolis_ddm(u, lbarrier, ubarrier, t, em, *, check_args = True):
     * `lbarrier`: threshold for the incumbents
     * `ubarrier`: threshold for the candidates
     * `t`: time limit
-    * `em`: exploration matrix. If `None` (the default), it is assumed to be uniform. Otherwise,
-      it should be a `n`×`n` matrix, where `n` is the length of `u`.
-    * `check_args`: (keyword-only argument) whether to check/convert the arguments, defaults to
-      True
+    * `em`: exploration matrix. See the docs for `timed_metropolis`. Defaults to `None`.
+    * `num_samples`: number of tests to perform. Defaults to `10**3`.
+    * `cached_sampler`: whether to chache the samples (improves performance, but requires O(n^2) memory).
 
     Output
     ------
 
-    The output is the index corresponding to the final choice, an `int` between `0` and `len(u)-1`.
-    """
-    if check_args:
-        u, lbarrier, ubarrier, t, em =  _check_metr_args(u, lbarrier, ubarrier, t, em)
-
-    n = len(u)
-    unif = (em is None)
-
-    s = 0.0                  # clock
-    b = np.random.randint(n) # initial choice
-
-    while True:
-        if unif:
-            a = uniform_proposal(n, b)
-        else:
-            a = nonuniform_proposal(em, b)
-
-        RT, CO = ddm_sample(u[a], u[b], lbarrier, ubarrier)
-
-        s += RT
-
-        if s > t:
-            break
-        elif CO:
-            b = a
-
-    return b
-
-def metropolis_ddm_hist(u, lbarrier, ubarrier, t, em = None, num_samples = 10**3):
-    """
-    Call `metropolis_ddm` repeatedly and return a count of the occurrences of each
-    outcome.
-
-    Inputs: same as `metropolis_ddm`, but the final argument `num_samples` determines
-    the number of tests to perform.
-
-    Output: a vector (a 1-d numpy array of integers) with the same length as the input `u`,
+    A vector (a 1-d numpy array of integers) with the same length as the input `u`,
     in which each entry counts the number of times an item was chosen (out of the
     `num_samples` tests).
     """
 
-    args = _check_metr_args(u, lbarrier, ubarrier, t, em)
+    u, lbarrier, ubarrier = _check_metr_args1(u, lbarrier, ubarrier)
+    n = len(u)
+    t, em = _check_metr_args2(n, t, em)
 
     if not isinstance(num_samples, int):
         raise TypeError('number of samples `num_samples` must be an int, given: %s' % cname(num_samples))
     if num_samples < 0:
         raise ValueError('number of samples `num_samples` must be non-negative, given: %i' % num_samples)
 
+    if not isinstance(cached_sampler, bool):
+        raise TypeError('invalid argument `cached_sampler`, expected a `bool`, given: %s' % cname(cached_sampler))
+
+    if cached_sampler:
+        ddm = DDMSampler(u, lbarrier, ubarrier)
+        ddm_sampler = lambda a, b: ddm.sample(a, b)
+    else:
+        ddm_sampler = lambda a, b: ddm_sample(u[a], u[b], lbarrier, ubarrier)
+
     choice_count = np.zeros(len(u), dtype=int)
     for samples in range(num_samples):
-        choice = metropolis_ddm(*args, check_args=False)
+        choice = timed_metropolis(n, ddm_sampler, t, em, check_args=False)
         choice_count[choice] += 1
     return choice_count
 

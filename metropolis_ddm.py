@@ -40,8 +40,8 @@ def explo_matrix_unif(n):
 
     mask = exp_matr != dist #boolean mask (matrix)
 
-    exp_matr[mask] = (1/(n-1)) * 1/(dist[mask])
-    exp_matr[~mask] = 1 - (np.sum(exp_matr,axis=0) - np.diag(exp_matr))
+    exp_matr[mask] = (1 / (n-1)) / dist[mask]
+    exp_matr[~mask] = 1 - (np.sum(exp_matr, axis=0) - np.diag(exp_matr))
                          # np.sum(exp_matr,axis=0) -> array of the sums of the columns of exp_matr
 
     return exp_matr
@@ -91,8 +91,7 @@ def explo_matrix_input(n, ro, alt):
         g_aux = dist.copy() #corresponding graph of the distance matrix, will be used to check connected components
 
         while True:
-            print('Current Distance Matrix:')
-            print(dist)
+            print('Current Distance Matrix:\n%s' % dist)
             s = input('Alternatives (a,b): ')
 
             while True:
@@ -106,7 +105,7 @@ def explo_matrix_input(n, ro, alt):
             a,b = int(ls[0]),int(ls[1])
 
             if not (0 <= a < n): # if a >= n or a < 0:
-                print('Invalid alternative, a must be an integer between 0 and', n-1,'!')
+                print('Invalid alternative, a must be an integer between 0 and %i' % (n-1))
                 c = int(input('Continue matrix adjustments (0/1)? '))
                 if c:
                     continue
@@ -114,7 +113,7 @@ def explo_matrix_input(n, ro, alt):
                     break
 
             if not (0 <= b < n):
-                print('Invalid alternative, b must be an integer between 0 and', n-1,'!')
+                print('Invalid alternative, b must be an integer between 0 and %i' % (n-1))
                 c = int(input('Continue matrix adjustments (0/1)? '))
                 if c:
                     continue
@@ -131,12 +130,12 @@ def explo_matrix_input(n, ro, alt):
 
             if dist[a,b] != 1:
                 o = int(input('Distance already adjusted, overwrite (0/1)? '))
-                if not(o):
+                if not o:
                     continue
 
             while True:
-                d = input('New distance between ' + str(a) + ' and ' + str(b) + '? ')
-                if d in ('inf','np.inf'):
+                d = input('New distance between %i and %i? ' % (a, b))
+                if d in ('inf', 'np.inf'):
                     d = np.inf
                     g_aux[a,b] = 0
                     g_aux[b,a] = 0
@@ -170,8 +169,7 @@ def explo_matrix_input(n, ro, alt):
         graph = dist.astype(int)  #makes a copy of dist consisting of integers
 
         while True:
-            print('Current Graph:')
-            print(graph)
+            print('Current Graph:\n%s' % graph)
 
             s = input('Alternatives (a,b): ')
 
@@ -186,7 +184,7 @@ def explo_matrix_input(n, ro, alt):
             a,b = int(ls[0]),int(ls[1])
 
             if not (0 <= a < n):
-                print('Invalid alternative, a must be an integer between 0 and', n-1,'!')
+                print('Invalid alternative, a must be an integer between 0 and %i' % (n-1))
                 c = int(input('Continue graph adjustments (0/1)? '))
                 if c:
                     continue
@@ -194,7 +192,7 @@ def explo_matrix_input(n, ro, alt):
                     break
 
             if not (0 <= b < n):
-                print('Invalid alternative, b must be an integer between 0 and', n-1,'!')
+                print('Invalid alternative, b must be an integer between 0 and %i' % (n-1))
                 c = int(input('Continue graph adjustments (0/1)? '))
                 if c:
                     continue
@@ -210,7 +208,7 @@ def explo_matrix_input(n, ro, alt):
                     break
 
             while True:
-                d = int(input('Connect ' + str(a) + ' and ' + str(b) + ' (0/1)? '))
+                d = int(input('Connect %i and %i (0/1)? ' % (a, b)))
                 if d not in (0,1):
                     print('Invalid value! It must be either 0 or 1')
                 else:
@@ -266,30 +264,30 @@ def DDMcomparison(u_a, u_b, lbarrier, ubarrier):
 # The code contains several loops to ensure that the user inputs the right type
 # of parameters, however some checks are omitted for simplicity.
 
-def MetropolisDDM(k=10000):
+def MetropolisDDM(k = 10000):
     while True:
         n = int(input('Number of alternatives: '))
         if n <= 0:
             print('N must be a positive integer!')
         else:
-            print('Your alternatives are 0,1,...,' + str(n-1))
+            print('Your alternatives are 0,1,...,%i' % (n-1))
             break
 
-    u = np.arange(n)
+    u = np.arange(n, dtype=float)
 
     while True:
         u_options = input('Advanced utility options (0/1)? ')
-        if int(u_options) in (0,1):
+        if int(u_options) in (0, 1):
             break
         else:
             print('Please enter a valid input (0/1)')
 
     if int(u_options) == 1:
         print('Input utilities: ')
-        u = [float(input('u(' + str(i) + ') = ')) for i in range(n)]
+        u = [float(input('u(%i) = ' % i)) for i in range(n)]
         u = np.array(u)
 
-    u = u * 7.071 / (np.max(u)-np.min(u))
+    u *= 7.071 / (np.max(u) - np.min(u))
 
     while True:
         t = float(input('Time limit: '))
@@ -298,13 +296,13 @@ def MetropolisDDM(k=10000):
         else:
             print('The time limit needs to be strictly greater than 1!')
 
-    upper_barrier = np.log(t+1) / (np.max(u)-np.min(u))
+    upper_barrier = np.log(t+1) / (np.max(u) - np.min(u))
 
     lower_barrier = upper_barrier
 
     while True:
         barrier_options = input('Advanced threshold settings (0/1)? ')
-        if int(barrier_options) in (0,1):
+        if int(barrier_options) in (0, 1):
             break
         else:
             print('Please enter a valid input (0/1)')
@@ -315,7 +313,7 @@ def MetropolisDDM(k=10000):
 
     while True:
         q_o = input('Advanced exploration settings (0/1)? ')
-        if int(q_o) in (0,1):
+        if int(q_o) in (0, 1):
             q_o = int(q_o)
             break
         else:
@@ -331,20 +329,13 @@ def MetropolisDDM(k=10000):
         em = explo_matrix_input(n,ro,alt)
 
     print()
-    print(n, 'alternatives with normalized utilities ', u, 'choose in ', t, 'time units')
-    print()
-    print('Acceptance/rejection thresholds: ', [upper_barrier,lower_barrier])
-    print()
+    print(n, 'alternatives with normalized utilities', u, 'choose in', t, 'time units\n')
+    print('Acceptance/rejection thresholds: [%f, %f]\n' % (upper_barrier, lower_barrier))
 
     if q_o:
-        print('Exploration matrix: ')
-        print(em)
-        print()
+        print('Exploration matrix:\n%s\n' % em)
     else:
-        print('Exploration matrix: ')
-        print(explo_matrix_unif(n))
-        print()
-
+        print('Exploration matrix:\n%s\n' % explo_matrix_unif(n))
 
     p = np.exp(upper_barrier*u) / np.sum(np.exp(upper_barrier*u)) # softmax
 
@@ -361,10 +352,10 @@ def MetropolisDDM(k=10000):
         b = np.random.randint(n) # first automatically accepted proposal
 
         while True:
-            if not(q_o):
-                a = uniform_proposal(n,b)
+            if not q_o:
+                a = uniform_proposal(n, b)
             else:
-                a = nonuniform_proposal(em,b)
+                a = nonuniform_proposal(em, b)
                 if a == b:
                     continue
 
@@ -382,11 +373,9 @@ def MetropolisDDM(k=10000):
 
     choice_freq = choice_count / np.sum(choice_count)
 
-    print('Choice count:', choice_count)
-    print()
-    print('Total variation distance:', np.round( np.linalg.norm(choice_freq - p, 1) / 2 , decimals = 5 ) )
-    print()
-    print('Maximum simulation error:', np.round( np.max(np.abs(choice_freq - p)) , decimals = 5) )
+    print('Choice count: %s\n' % choice_count)
+    print('Total variation distance: %f\n' % (np.linalg.norm(choice_freq - p, 1) / 2))
+    print('Maximum simulation error: %f' % np.max(np.abs(choice_freq - p)))
 
     # COMPARISON PLOT
 

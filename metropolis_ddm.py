@@ -20,8 +20,11 @@ def uniform_proposal(n, b):
 # the incumbent is passed as a parameter (b) and it is used to select the correct column used for sampling
 
 def nonuniform_proposal(em, b):
-    N = np.shape(em)[0]
-    return np.random.choice(np.arange(N) , p = em[:,b])
+    n = np.shape(em)[0]
+    while True:
+        a = np.random.choice(np.arange(n) , p = em[:,b])
+        if a != b:
+            return a
 
 # UNIFORM EXPLORATION MATRIX
 # this function is not actually used for computation (we use uniform_proposal in that case),
@@ -99,7 +102,7 @@ def explo_matrix_input(n, ro, alt):
                 if len(ls) == 2 and ls[0].isdigit() and ls[1].isdigit():
                     break
                 else:
-                    print('Invalid alternatives input form! It must be of the type (a,b) with a and b integers')
+                    print('Invalid alternatives input form. It must be of the type (a,b) with a and b integers')
                     s = input('Alternatives (a,b): ')
 
             a,b = int(ls[0]),int(ls[1])
@@ -121,7 +124,7 @@ def explo_matrix_input(n, ro, alt):
                     break
 
             if a == b:
-                print('The distance between an alternative and itself cannot be modified (0 by definition of semi-metric)!')
+                print('The distance between an alternative and itself cannot be modified (0 by definition of semi-metric).')
                 c = int(input('Continue matrix adjustments (0/1)? '))
                 if c:
                     continue
@@ -141,15 +144,15 @@ def explo_matrix_input(n, ro, alt):
                     g_aux[b,a] = 0
                     break
                 elif float(d) <= 0:
-                    print('Invalid distance! It must be a positive float!')
+                    print('Invalid distance, it must be a positive float')
                 else:
                     d = float(d)
                     break
 
             cc1 = connected_components(g_aux)
             if cc1[0] != 1:
-                print('WARNING! This action disconnects the set of alternatives!')
-                print('This is not allowed! The previous distance is maintained')
+                print('WARNING! This action disconnects the set of alternatives.')
+                print('This is not allowed. The previous distance is maintained')
                 g_aux[a,b] = 1
                 g_aux[b,a] = 1
             else:
@@ -178,7 +181,7 @@ def explo_matrix_input(n, ro, alt):
                 if len(ls) == 2 and ls[0].isdigit() and ls[1].isdigit():
                     break
                 else:
-                    print('Invalid alternatives input form! It must be of the type (a,b) with a and b integers')
+                    print('Invalid alternatives input form. It must be of the type (a,b) with a and b integers')
                     s = input('Alternatives (a,b): ')
 
             a,b = int(ls[0]),int(ls[1])
@@ -200,7 +203,7 @@ def explo_matrix_input(n, ro, alt):
                     break
 
             if a == b:
-                print('Invalid alternatives, no edges from a vertex to itself are allowed!')
+                print('Invalid alternatives, no edges from a vertex to itself are allowed.')
                 c = int(input('Continue graph adjustments (0/1)? '))
                 if c:
                     continue
@@ -210,7 +213,7 @@ def explo_matrix_input(n, ro, alt):
             while True:
                 d = int(input('Connect %i and %i (0/1)? ' % (a, b)))
                 if d not in (0,1):
-                    print('Invalid value! It must be either 0 or 1')
+                    print('Invalid value, it must be either 0 or 1')
                 else:
                     break
 
@@ -219,8 +222,8 @@ def explo_matrix_input(n, ro, alt):
 
             cc1 = connected_components(graph)
             if cc1[0] != 1:
-                print('WARNING! This action disconnects the set of alternatives!')
-                print('This is not allowed! The previous situation is maintained')
+                print('WARNING! This action disconnects the set of alternatives.')
+                print('This is not allowed. The previous situation is maintained')
                 graph[a,b] = 1
                 graph[b,a] = 1
 
@@ -245,11 +248,11 @@ def explo_matrix_input(n, ro, alt):
     return np.abs(exp_matr)
 
 
-## DDM comparison
+## DDM sampling
 
-def DDMcomparison(u_a, u_b, lbarrier, ubarrier):
+def ddm_sample(u_a, u_b, lbarrier, ubarrier):
     """
-    Sample a response time and a choice outcome in a decision process, given
+    Sample a response time and a choice outcome in a drift-diffusion-model decision process, given
     the utilities and the decision thresholds.
 
     Inputs
@@ -276,13 +279,102 @@ def DDMcomparison(u_a, u_b, lbarrier, ubarrier):
 
     return RT[0], CO[0]
 
-def MetropolisDDM(k = 10000):
+def metropolis_ddm(u, lbarrier, ubarrier, t, em = None, k = 10**3):
+    """
+    Simluate a multiple-choice decision process as a sequence of pariwise comparisons,
+    each of which is taken according to the drift-diffusion model. At each step, a
+    decision is made between an incumbent and a candidate; the candidates are
+    proposed according to an exploration matrix; the final choice is determined
+    by the current incumbent when the total available time is elapsed.
+
+    Inputs
+    ------
+
+    * `u`: a vector of utilities (anything that can be converted to a numpy 1-d array of
+      floats is acceptable
+    * `lbarrier`: threshold for the incumbents
+    * `ubarrier`: threshold for the candidates
+    * `t`: time limit
+    * `em`: exploration matrix. If `None` (the default), it is assumed to be uniform. Otherwise,
+      it should be a `n`×`n` matrix, where `n` is the length of `u`.
+    * `k`: number of tests to perform. The decision process is simulated this many times.
+
+    Output
+    ------
+
+    The output is a vector (a 1-d numpy array of integers) with the same length as the input `u`,
+    in which each entry counts the number of times an item was chosen (out of the `k` tests).
+    """
+    if not isinstance(u, np.ndarray) or u.dtype != float:
+        ok = True
+        try:
+            u = np.array(u, dtype=float)
+        except:
+            ok = False
+        if not ok:
+            raise TypeError('invalid utilities list, unable to convert to `float` array')
+    if u.ndim != 1:
+        raise ValueError('invalid utilities list, should be 1-dimensional')
+
+    n = len(u)
+    if n == 0:
+        raise ValueError('empty utilities list')
+
+    choice_count = np.zeros(n, dtype=int) # choice count vector
+
+    unif = (em is None)
+    if not unif:
+        if not isinstance(em, np.ndarray) or em.dtype != float or em.ndim != 2:
+            raise TypeError('exploration matrix `em` must be either `None` or a 2-d numpy array of floats')
+        if em.shape != (n, n):
+            raise ValueError('invalid exploration matrix size, expected %i×%i, given %i×%i' % (n, n, *em.shape))
+        if np.any(np.abs(em.sum(axis=0) - 1.0) > 1e-8):
+            raise ValueError('exploration matrix columns are not normalized')
+
+    # nc : number of choices from A = {0,...,D-1}
+
+    for nc in range(k):
+
+    ## DECISION PROCEDURE
+
+        s = 0 # clock
+        b = np.random.randint(n) # initial choice
+
+        while True:
+            if unif:
+                a = uniform_proposal(n, b)
+            else:
+                a = nonuniform_proposal(em, b)
+
+            RT, CO = ddm_sample(u[a], u[b], lbarrier, ubarrier)
+
+            s += RT
+
+            if s > t:
+                break
+            elif CO:
+                b = a
+
+        final_choice = b
+        choice_count[final_choice] += 1
+
+    return choice_count
+
+def run_comparison():
+    """
+    An interactive function to run a comparison between a Metropolis-DDM multiple-choice
+    simulation and the limiting distribution given by the softmax of the utilities.
+
+    All parameters and settings are input interactively. At the end of the simulation,
+    a plot comparing the frequencies is produced, and some summarizing information is printed
+    on the console.
+    """
     # This code contains several loops to ensure that the user inputs the right type
     # of parameters, however some checks are omitted for simplicity.
     while True:
         n = int(input('Number of alternatives: '))
         if n <= 0:
-            print('N must be a positive integer!')
+            print('The number of alternatives must be a positive integer')
         else:
             print('Your alternatives are 0,1,...,%i' % (n-1))
             break
@@ -308,7 +400,7 @@ def MetropolisDDM(k = 10000):
         if t > 1:
             break
         else:
-            print('The time limit needs to be strictly greater than 1!')
+            print('The time limit needs to be strictly greater than 1')
 
     upper_barrier = np.log(t+1) / (np.max(u) - np.min(u))
 
@@ -341,6 +433,15 @@ def MetropolisDDM(k = 10000):
         else:
             print('Input the graph of the alternatives:')
         em = explo_matrix_input(n,ro,alt)
+    else:
+        em = None
+
+    while True:
+        k = int(input('Number of samples: '))
+        if k <= 0:
+            print('The number of samples should be a positive integer')
+        else:
+            break
 
     print()
     print(n, 'alternatives with normalized utilities', u, 'choose in', t, 'time units\n')
@@ -353,37 +454,7 @@ def MetropolisDDM(k = 10000):
 
     p = np.exp(upper_barrier*u) / np.sum(np.exp(upper_barrier*u)) # softmax
 
-    choice_count = np.zeros(n, dtype=int) # choice count vector
-
-    # nc : number of choices from A = {0,...,D-1}
-
-    for nc in range(k):
-
-    ## DECISION PROCEDURE
-
-        s = 0 # clock
-
-        b = np.random.randint(n) # first automatically accepted proposal
-
-        while True:
-            if not q_o:
-                a = uniform_proposal(n, b)
-            else:
-                a = nonuniform_proposal(em, b)
-                if a == b:
-                    continue
-
-            RT, CO = DDMcomparison(u[a], u[b], lower_barrier, upper_barrier)
-
-            s += RT
-
-            if s > t:
-                break
-            elif CO:
-                b = a
-
-        final_choice = b
-        choice_count[final_choice] += 1
+    choice_count = metropolis_ddm(u, lower_barrier, upper_barrier, t, em, k)
 
     choice_freq = choice_count / np.sum(choice_count)
 

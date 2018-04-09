@@ -28,8 +28,10 @@ def nonuniform_proposal(em,b):
 # it is used for plotting the exploration matrix when it is uniform 
   
 def explo_matrix_unif(n):
-    if not(isinstance(n,int) and n > 0):
-        raise Exception('The argument of the exploration matrix must be a positive integer!')
+    if not isinstance(n, int):
+        raise TypeError('argument `n` must be an int, given %s' % type(n))
+    if n < 2:
+        raise ValueError('argument `n` must be >= 2, given %i' % n)
     
     dist = np.ones((n,n))
     dist[np.diag_indices(n)] = 0
@@ -69,12 +71,16 @@ def explo_matrix_unif(n):
 # 
 
 def explo_matrix_input(n,ro,alt):
-    if not(isinstance(n,int) and n > 0):
-        raise Exception('The size of the exploration matrix must be a positive integer!')
-    if not(isinstance(ro,float) and ro >= 0):
-        raise Exception('The exploration aversion parameter must be a positive float!')
+    if not isinstance(n, int):
+        raise TypeError('argument `n` must be an int, given %s' % type(n))
+    if n <= 0:
+        raise ValueError('argument `n` must be > 0, given %i' % n)
+    if not isinstance(ro, float):
+        raise TypeError('argument `ro` must be a float, given %s' % type(ro))
+    if ro < 0:
+        raise ValueError('argument `ro` must be >= 0, given %f' % ro)
     if alt not in (0,1):
-        raise Exception('Invalid type parameter!')
+        raise ValueError('argument `alt` must be 0 or 1, given %s' % alt)
     
     dist = np.ones((n,n))
     dist[np.diag_indices(n)] = 0

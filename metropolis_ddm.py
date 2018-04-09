@@ -248,6 +248,25 @@ def explo_matrix_input(n, ro, alt):
 ## DDM comparison
 
 def DDMcomparison(u_a, u_b, lbarrier, ubarrier):
+    """
+    Sample a response time and a choice outcome in a decision process, given
+    the utilities and the decision thresholds.
+
+    Inputs
+    ------
+
+    * `u_a`: utility of choice `a` (incumbent)
+    * `u_b`: utility of choice `b` (candidate)
+    * `lbarrier`: threshold for choice `a`
+    * `ubarrier`: threshold for choice `b`
+
+    Outputs
+    -------
+
+    * `RT`: a `float` representing the response time
+    * `CO`: a `bool` representing the choice: `True` if the proposal is accepted (`b` was chosen);
+      `False` otherwise (`a` was chosen)
+    """
     mu_ab = np.array([(u_a - u_b) / np.sqrt(2)])
     lbound_normarray = np.array([lbarrier / np.sqrt(2)])
     ubound_normarray = np.array([ubarrier / np.sqrt(2)])
@@ -257,14 +276,9 @@ def DDMcomparison(u_a, u_b, lbarrier, ubarrier):
 
     return RT[0], CO[0]
 
-# Given proposal a with utility u(a) = u_a, incumbent b with utility u(b) = u_b
-# lower threshold \beta = lbarrier > 0 and upper threshold \lambda = ubarrier > 0
-# DDMcomparison(u_a, u_b, lbarrier, ubarrier) returns the response time RT
-# and choice outcome CO = True if proposal a is accepted CO = False otherwise
-# The code contains several loops to ensure that the user inputs the right type
-# of parameters, however some checks are omitted for simplicity.
-
 def MetropolisDDM(k = 10000):
+    # This code contains several loops to ensure that the user inputs the right type
+    # of parameters, however some checks are omitted for simplicity.
     while True:
         n = int(input('Number of alternatives: '))
         if n <= 0:

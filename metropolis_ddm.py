@@ -26,15 +26,18 @@ def nonuniform_proposal(em, b):
         if a != b:
             return a
 
+def cname(x):
+    return x.__class__.__name__
+
 # UNIFORM EXPLORATION MATRIX
 # this function is not actually used for computation (we use uniform_proposal in that case),
 # it is used for plotting the exploration matrix when it is uniform
 
 def explo_matrix_unif(n):
     if not isinstance(n, int):
-        raise TypeError('argument `n` must be an int, given %s' % type(n))
+        raise TypeError('argument `n` must be an int, given: %s' % cname(n))
     if n < 2:
-        raise ValueError('argument `n` must be >= 2, given %i' % n)
+        raise ValueError('argument `n` must be >= 2, given: %i' % n)
 
     dist = np.ones((n,n))
     dist[np.diag_indices(n)] = 0
@@ -75,15 +78,15 @@ def explo_matrix_unif(n):
 
 def explo_matrix_input(n, ro, alt):
     if not isinstance(n, int):
-        raise TypeError('argument `n` must be an int, given %s' % type(n))
+        raise TypeError('argument `n` must be an int, given: %s' % cname(n))
     if n <= 0:
-        raise ValueError('argument `n` must be > 0, given %i' % n)
+        raise ValueError('argument `n` must be > 0, given: %i' % n)
     if not isinstance(ro, float):
-        raise TypeError('argument `ro` must be a float, given %s' % type(ro))
+        raise TypeError('argument `ro` must be a float, given: %s' % cname(ro))
     if ro < 0:
-        raise ValueError('argument `ro` must be >= 0, given %f' % ro)
+        raise ValueError('argument `ro` must be >= 0, given: %f' % ro)
     if alt not in (0,1):
-        raise ValueError('argument `alt` must be 0 or 1, given %s' % alt)
+        raise ValueError('argument `alt` must be 0 or 1, given: %s' % alt)
 
     dist = np.ones((n,n))
     dist[np.diag_indices(n)] = 0
@@ -279,13 +282,57 @@ def ddm_sample(u_a, u_b, lbarrier, ubarrier):
 
     return RT[0], CO[0]
 
-def metropolis_ddm(u, lbarrier, ubarrier, t, em = None, k = 10**3):
+def _check_metr_args(u, lbarrier, ubarrier, t, em):
+    if not isinstance(u, np.ndarray) or u.dtype != float:
+        try:
+            u = np.array(u, dtype=float)
+        except:
+            raise TypeError('invalid utilities list `u`, unable to convert to `float` array')
+    if u.ndim != 1:
+        raise ValueError('invalid utilities list `u`, should be 1-dimensional')
+
+    n = len(u)
+    if n == 0:
+        raise ValueError('empty utilities list')
+
+    if not (isinstance(lbarrier, (int,float)) and isinstance(ubarrier, (int,float))):
+        raise TypeError('thresholds lbarrier,ubarrier must be ints or floats, given: %s,%s' % (cname(lbarrier), cname(ubarrier)))
+    lbarrier, ubarrier = float(lbarrier), float(ubarrier)
+    if lbarrier <= 0 or ubarrier <= 0:
+        raise ValueError('thresholds lbarrier,ubarrier must be positive, given: %f,%f' % (lbarrier, ubarrier))
+
+    if not isinstance(t, (int,float)):
+        raise TypeError('time limit `t` must be an int or a float, given: %s' % cname(t))
+    t = float(t)
+    if t <= 0:
+        raise ValueError('time limit `t` must be positive, given: %f' % t)
+
+    choice_count = np.zeros(n, dtype=int) # choice count vector
+
+    unif = (em is None)
+    if not unif:
+        if not isinstance(em, np.ndarray) or em.dtype != float:
+            try:
+                em = np.array(em)
+            except:
+                raise TypeError('invalid exploration matrix `em`, cannot convert to an array of floats')
+        if em.ndim != 2:
+            raise ValueError('invalid exploration matrix `em`, should be 2-dimensional')
+        if em.shape != (n, n):
+            raise ValueError('invalid exploration matrix `em` size, expected %i×%i, given: %i×%i' % (n, n, *em.shape))
+        if np.any(np.abs(em.sum(axis=0) - 1.0) > 1e-8):
+            raise ValueError('exploration matrix columns are not normalized')
+
+    return u, lbarrier, ubarrier, t, em
+
+
+def metropolis_ddm(u, lbarrier, ubarrier, t, em, *, check_args = True):
     """
-    Simluate a multiple-choice decision process as a sequence of pariwise comparisons,
+    Simulate a multiple-choice decision process as a sequence of pariwise comparisons,
     each of which is taken according to the drift-diffusion model. At each step, a
     decision is made between an incumbent and a candidate; the candidates are
     proposed according to an exploration matrix; the final choice is determined
-    by the current incumbent when the total available time is elapsed.
+    by the current incumbent when the total available time has elapsed.
 
     Inputs
     ------
@@ -297,67 +344,64 @@ def metropolis_ddm(u, lbarrier, ubarrier, t, em = None, k = 10**3):
     * `t`: time limit
     * `em`: exploration matrix. If `None` (the default), it is assumed to be uniform. Otherwise,
       it should be a `n`×`n` matrix, where `n` is the length of `u`.
-    * `k`: number of tests to perform. The decision process is simulated this many times.
+    * `check_args`: (keyword-only argument) whether to check/convert the arguments, defaults to
+      True
 
     Output
     ------
 
-    The output is a vector (a 1-d numpy array of integers) with the same length as the input `u`,
-    in which each entry counts the number of times an item was chosen (out of the `k` tests).
+    The output is the index corresponding to the final choice, an `int` between `0` and `len(u)-1`.
     """
-    if not isinstance(u, np.ndarray) or u.dtype != float:
-        ok = True
-        try:
-            u = np.array(u, dtype=float)
-        except:
-            ok = False
-        if not ok:
-            raise TypeError('invalid utilities list, unable to convert to `float` array')
-    if u.ndim != 1:
-        raise ValueError('invalid utilities list, should be 1-dimensional')
+    if check_args:
+        u, lbarrier, ubarrier, t, em =  _check_metr_args(u, lbarrier, ubarrier, t, em)
 
     n = len(u)
-    if n == 0:
-        raise ValueError('empty utilities list')
-
-    choice_count = np.zeros(n, dtype=int) # choice count vector
-
     unif = (em is None)
-    if not unif:
-        if not isinstance(em, np.ndarray) or em.dtype != float or em.ndim != 2:
-            raise TypeError('exploration matrix `em` must be either `None` or a 2-d numpy array of floats')
-        if em.shape != (n, n):
-            raise ValueError('invalid exploration matrix size, expected %i×%i, given %i×%i' % (n, n, *em.shape))
-        if np.any(np.abs(em.sum(axis=0) - 1.0) > 1e-8):
-            raise ValueError('exploration matrix columns are not normalized')
 
-    # nc : number of choices from A = {0,...,D-1}
+    s = 0.0                  # clock
+    b = np.random.randint(n) # initial choice
 
-    for nc in range(k):
+    while True:
+        if unif:
+            a = uniform_proposal(n, b)
+        else:
+            a = nonuniform_proposal(em, b)
 
-    ## DECISION PROCEDURE
+        RT, CO = ddm_sample(u[a], u[b], lbarrier, ubarrier)
 
-        s = 0 # clock
-        b = np.random.randint(n) # initial choice
+        s += RT
 
-        while True:
-            if unif:
-                a = uniform_proposal(n, b)
-            else:
-                a = nonuniform_proposal(em, b)
+        if s > t:
+            break
+        elif CO:
+            b = a
 
-            RT, CO = ddm_sample(u[a], u[b], lbarrier, ubarrier)
+    return b
 
-            s += RT
+def metropolis_ddm_hist(u, lbarrier, ubarrier, t, em = None, num_samples = 10**3):
+    """
+    Call `metropolis_ddm` repeatedly and return a count of the occurrences of each
+    outcome.
 
-            if s > t:
-                break
-            elif CO:
-                b = a
+    Inputs: same as `metropolis_ddm`, but the final argument `num_samples` determines
+    the number of tests to perform.
 
-        final_choice = b
-        choice_count[final_choice] += 1
+    Output: a vector (a 1-d numpy array of integers) with the same length as the input `u`,
+    in which each entry counts the number of times an item was chosen (out of the
+    `num_samples` tests).
+    """
 
+    args = _check_metr_args(u, lbarrier, ubarrier, t, em)
+
+    if not isinstance(num_samples, int):
+        raise TypeError('number of samples `num_samples` must be an int, given: %s' % cname(num_samples))
+    if num_samples < 0:
+        raise ValueError('number of samples `num_samples` must be non-negative, given: %i' % num_samples)
+
+    choice_count = np.zeros(len(u), dtype=int)
+    for samples in range(num_samples):
+        choice = metropolis_ddm(*args, check_args=False)
+        choice_count[choice] += 1
     return choice_count
 
 def run_comparison():
@@ -437,8 +481,8 @@ def run_comparison():
         em = None
 
     while True:
-        k = int(input('Number of samples: '))
-        if k <= 0:
+        num_samples = int(input('Number of samples: '))
+        if num_samples <= 0:
             print('The number of samples should be a positive integer')
         else:
             break
@@ -454,7 +498,7 @@ def run_comparison():
 
     p = np.exp(upper_barrier*u) / np.sum(np.exp(upper_barrier*u)) # softmax
 
-    choice_count = metropolis_ddm(u, lower_barrier, upper_barrier, t, em, k)
+    choice_count = metropolis_ddm_hist(u, lower_barrier, upper_barrier, t, em, num_samples)
 
     choice_freq = choice_count / np.sum(choice_count)
 

@@ -16,17 +16,18 @@ def uniform_proposal(n, b):
     choose a proposal uniformly from a set of `n` alternatives,
     excluding the incumbent `b`.
     """
-    alternatives = np.arange(n)
-    return np.random.choice(alternatives[np.arange(n) != b])
+    i = np.random.randint(n - 1)
+    return i + (i >= b)
 
 def nonuniform_proposal(em, b):
     """
     choose a proposal according to a symmetric stochastic matrix (the exploration matrix `em`);
-    the incumbent `b` is passed as a parameter and it is used to select the correct column used for sampling
+    the incumbent `b` is passed as a parameter and it is used to select the correct column
+    used for sampling.
     """
-    n = np.shape(em)[0]
+    n = em.shape[0]
     while True:
-        a = np.random.choice(np.arange(n) , p = em[:,b])
+        a = np.random.choice(np.arange(n), p = em[:,b])
         if a != b:
             return a
 

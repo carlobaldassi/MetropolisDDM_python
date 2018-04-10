@@ -1,25 +1,29 @@
+# -*- coding: utf-8 -*-
+
 # Metropolis Drift-Diffusion-Model
 # Copyright 2018 F. Maccheroni, M. Pirazzini, C. Baldassi
 # This file is released under the MIT licence that accompanies the code
 
+## This file contains the core computational routines
+
 import numpy as np
-import matplotlib.pyplot as plt
 import ddm as dm
 
-from scipy.sparse.csgraph import floyd_warshall
-from scipy.sparse.csgraph import connected_components
-
-# function that chooses a proposal uniformly from the set of alternatives (n)
-# that are different from the incumbent (b)
+## Some auxiliary functions
 
 def uniform_proposal(n, b):
+    """
+    choose a proposal uniformly from a set of `n` alternatives,
+    excluding the incumbent `b`.
+    """
     alternatives = np.arange(n)
     return np.random.choice(alternatives[np.arange(n) != b])
 
-# function that chooses a proposal according to a symmetric stochastic matrix (the exploration matrix 'em')
-# the incumbent is passed as a parameter (b) and it is used to select the correct column used for sampling
-
 def nonuniform_proposal(em, b):
+    """
+    choose a proposal according to a symmetric stochastic matrix (the exploration matrix `em`);
+    the incumbent `b` is passed as a parameter and it is used to select the correct column used for sampling
+    """
     n = np.shape(em)[0]
     while True:
         a = np.random.choice(np.arange(n) , p = em[:,b])
@@ -27,283 +31,11 @@ def nonuniform_proposal(em, b):
             return a
 
 def cname(x):
+    "class name, for pretty-printing purposes only"
     return x.__class__.__name__
-
-# UNIFORM EXPLORATION MATRIX
-# this function is not actually used for computation (we use uniform_proposal in that case),
-# it is used for plotting the exploration matrix when it is uniform
-
-def explo_matrix_unif(n):
-    if not isinstance(n, int):
-        raise TypeError('argument `n` must be an int, given: %s' % cname(n))
-    if n < 2:
-        raise ValueError('argument `n` must be >= 2, given: %i' % n)
-
-    dist = np.ones((n,n))
-    dist[np.diag_indices(n)] = 0
-
-    exp_matr = np.zeros((n,n))
-
-    mask = exp_matr != dist #boolean mask (matrix)
-
-    exp_matr[mask] = (1 / (n-1)) / dist[mask]
-    exp_matr[~mask] = 1 - (np.sum(exp_matr, axis=0) - np.diag(exp_matr))
-                         # np.sum(exp_matr,axis=0) -> array of the sums of the columns of exp_matr
-
-    return exp_matr
-
-# EXPLORATION MATRIX INPUT
-# This function lets the user input the exploration matrix, either through a distance
-# matrix or through a graph. When the user decides to input a graph we later convert
-# it to a distance matrix and then transorm it into an exploration matrix.
-# The arguments of the function are the number of alternatives (n), the exploration
-# aversion parameter (ro) and a parameter that tells the function whether to work
-# on a graph or directly on a distance matrix (alt, 1 for distance and 0 for graph)
-
-# The input procedure works as follows:
-# 0 - both the graph and the distance matrix are initialized as uniform, so as if the
-#     corresponding graph were complete with weights equal to 1
-# 1 - choose a pair of nodes (alternatives), they must be written in the form (i,j)
-# 2 - then, once the function checked whether the proposed alternatives are valid,
-#     the user can insert the value to put in chosen position. If the user is working
-#     on a graph the value can be either 0 or 1, otherwise it can be any positive float
-#     (for the distance matrix), but it cannot disconnect the final graph
-# 3 - To stop the construction of the matrix, the user simply has to input '0' whenever
-#     'Continue (0/1)?' is asked.
-#
-# After the input procedure, the distance matrix is normalized so that its minimum entry
-# outside the main diagonal is 1 (we do not need to do so for the graph because by construction
-# the minimum distance is already 1).
-#
-
-def explo_matrix_input(n, ro, alt):
-    if not isinstance(n, int):
-        raise TypeError('argument `n` must be an int, given: %s' % cname(n))
-    if n <= 0:
-        raise ValueError('argument `n` must be > 0, given: %i' % n)
-    if not isinstance(ro, float):
-        raise TypeError('argument `ro` must be a float, given: %s' % cname(ro))
-    if ro < 0:
-        raise ValueError('argument `ro` must be >= 0, given: %f' % ro)
-    if alt not in (0,1):
-        raise ValueError('argument `alt` must be 0 or 1, given: %s' % alt)
-
-    dist = np.ones((n,n))
-    dist[np.diag_indices(n)] = 0
-    mask = dist != 0
-
-    if alt:                                                     # DISTANCE
-
-        g_aux = dist.copy() #corresponding graph of the distance matrix, will be used to check connected components
-
-        while True:
-            print('Current Distance Matrix:\n%s' % dist)
-            s = input('Alternatives (a,b): ')
-
-            while True:
-                ls = s.split(',')
-                if len(ls) == 2 and ls[0].isdigit() and ls[1].isdigit():
-                    break
-                else:
-                    print('Invalid alternatives input form. It must be of the type (a,b) with a and b integers')
-                    s = input('Alternatives (a,b): ')
-
-            a,b = int(ls[0]),int(ls[1])
-
-            if not (0 <= a < n): # if a >= n or a < 0:
-                print('Invalid alternative, a must be an integer between 0 and %i' % (n-1))
-                c = int(input('Continue matrix adjustments (0/1)? '))
-                if c:
-                    continue
-                else:
-                    break
-
-            if not (0 <= b < n):
-                print('Invalid alternative, b must be an integer between 0 and %i' % (n-1))
-                c = int(input('Continue matrix adjustments (0/1)? '))
-                if c:
-                    continue
-                else:
-                    break
-
-            if a == b:
-                print('The distance between an alternative and itself cannot be modified (0 by definition of semi-metric).')
-                c = int(input('Continue matrix adjustments (0/1)? '))
-                if c:
-                    continue
-                else:
-                    break
-
-            if dist[a,b] != 1:
-                o = int(input('Distance already adjusted, overwrite (0/1)? '))
-                if not o:
-                    continue
-
-            while True:
-                d = input('New distance between %i and %i? ' % (a, b))
-                if d in ('inf', 'np.inf'):
-                    d = np.inf
-                    g_aux[a,b] = 0
-                    g_aux[b,a] = 0
-                    break
-                elif float(d) <= 0:
-                    print('Invalid distance, it must be a positive float')
-                else:
-                    d = float(d)
-                    break
-
-            cc1 = connected_components(g_aux)
-            if cc1[0] != 1:
-                print('WARNING! This action disconnects the set of alternatives.')
-                print('This is not allowed. The previous distance is maintained')
-                g_aux[a,b] = 1
-                g_aux[b,a] = 1
-            else:
-                dist[a,b] = d
-                dist[b,a] = d
-
-            c = int(input('Continue matrix adjustments (0/1)? '))
-            if c:
-                continue
-            else:
-                break
-
-        dist /= np.min(dist[mask]) #normalization
-
-
-    else:                                                           #GRAPH
-        graph = dist.astype(int)  #makes a copy of dist consisting of integers
-
-        while True:
-            print('Current Graph:\n%s' % graph)
-
-            s = input('Alternatives (a,b): ')
-
-            while True:
-                ls = s.split(',')
-                if len(ls) == 2 and ls[0].isdigit() and ls[1].isdigit():
-                    break
-                else:
-                    print('Invalid alternatives input form. It must be of the type (a,b) with a and b integers')
-                    s = input('Alternatives (a,b): ')
-
-            a,b = int(ls[0]),int(ls[1])
-
-            if not (0 <= a < n):
-                print('Invalid alternative, a must be an integer between 0 and %i' % (n-1))
-                c = int(input('Continue graph adjustments (0/1)? '))
-                if c:
-                    continue
-                else:
-                    break
-
-            if not (0 <= b < n):
-                print('Invalid alternative, b must be an integer between 0 and %i' % (n-1))
-                c = int(input('Continue graph adjustments (0/1)? '))
-                if c:
-                    continue
-                else:
-                    break
-
-            if a == b:
-                print('Invalid alternatives, no edges from a vertex to itself are allowed.')
-                c = int(input('Continue graph adjustments (0/1)? '))
-                if c:
-                    continue
-                else:
-                    break
-
-            while True:
-                d = int(input('Connect %i and %i (0/1)? ' % (a, b)))
-                if d not in (0,1):
-                    print('Invalid value, it must be either 0 or 1')
-                else:
-                    break
-
-            graph[a,b] = d
-            graph[b,a] = d
-
-            cc1 = connected_components(graph)
-            if cc1[0] != 1:
-                print('WARNING! This action disconnects the set of alternatives.')
-                print('This is not allowed. The previous situation is maintained')
-                graph[a,b] = 1
-                graph[b,a] = 1
-
-            c = int(input('Continue graph adjustments (0/1)? '))
-            if c:
-                continue
-            else:
-                break
-
-        print('Final Graph:')
-        print(graph)
-        #FLOYD WARSHALL
-        dist = floyd_warshall(graph)
-
-    print('Final Distance Matrix:')
-    print(dist)
-
-    exp_matr = np.zeros((n,n))
-    exp_matr[mask] = (1/(n-1)) * 1/(dist[mask]**ro)
-    exp_matr[~mask] = 1 - (np.sum(exp_matr,axis=0) - np.diag(exp_matr))
-
-    return np.abs(exp_matr)
 
 
 ## DDM sampling
-
-class DDMSampler:
-    """
-    A class that helps sampling response times and a choice outcomes in a
-    drift-diffusion-model decision process, given a vector of utilities
-    and the decision thresholds. It works essentially like a cached version
-    of `ddm_sample`.
-
-    The constructor takes the following arguments:
-
-    * `u`: a vector of utilities
-    * `lb`: threshold for the incumbents
-    * `ub`: threshold for the candidated
-    * `cache_size`: the number of samples to cache for each combination of
-      the values in `u`.
-
-    It provides one relevant method, `sample(a, b)`.
-    """
-    def __init__(self, u, lb, ub, cache_size = 50):
-        if cache_size <= 0:
-            raise ValueError('invalid `cache_size`, must be positive, given %i' % cache_size)
-        c = np.sqrt(2)
-        n = len(u)
-        self.mu = [np.array([(u[a] - u[b]) / c]) for a in range(n) for b in range(n)]
-        self.n = n
-        self.lb, self.ub = np.array([lb / c]), np.array([ub / c])
-        self.ind = [cache_size for a in range(n) for b in range(n)]
-        self.cache_size = cache_size
-
-    def refresh(self, a, b):
-        n = self.n
-        k = a * n + b
-        mu = self.mu[k]
-        lb, ub, cache_size = self.lb, self.ub, self.cache_size
-        dt = 0.000000001 # irrelevant
-        self.RT, self.CO = dm.rand_asym(mu, -lb, ub, dt, cache_size)
-        self.ind[k] = 0
-
-    def sample(self, a, b):
-        """
-        Returns a sample (a response time and a choice outcome) for two items `a`
-        and `b` (two integers, the incumbent and the candidate).
-        Basically the same as `ddm_sample`.
-        """
-        n = self.n
-        k = a * n + b
-        if self.ind[k] == self.cache_size:
-            self.refresh(a, b)
-            assert self.ind[k] == 0
-        RT, CO = self.RT[self.ind[k]], self.CO[self.ind[k]]
-        self.ind[k] += 1
-        return RT, CO
 
 def ddm_sample(u_a, u_b, lbarrier, ubarrier):
     """
@@ -313,8 +45,8 @@ def ddm_sample(u_a, u_b, lbarrier, ubarrier):
     Inputs
     ------
 
-    * `u_a`: utility of choice `a` (incumbent)
-    * `u_b`: utility of choice `b` (candidate)
+    * `u_a`: utility of choice `a` (candidate)
+    * `u_b`: utility of choice `b` (incumbent)
     * `lbarrier`: threshold for choice `a`
     * `ubarrier`: threshold for choice `b`
 
@@ -323,7 +55,7 @@ def ddm_sample(u_a, u_b, lbarrier, ubarrier):
 
     * `RT`: a `float` representing the response time
     * `CO`: a `bool` representing the choice outcome: `True` if the proposal is accepted
-      (`b` was chosen), `False` otherwise (`a` was chosen)
+      (`a` was chosen), `False` otherwise (`b` was chosen)
     """
     mu_ab = np.array([(u_a - u_b) / np.sqrt(2)])
     lbound_normarray = np.array([lbarrier / np.sqrt(2)])
@@ -333,6 +65,64 @@ def ddm_sample(u_a, u_b, lbarrier, ubarrier):
     RT, CO = dm.rand_asym(mu_ab, -lbound_normarray, ubound_normarray, dt, 1)
 
     return RT[0], CO[0]
+
+
+class DDMSampler:
+    """
+    A class that helps sampling response times and a choice outcomes in a
+    drift-diffusion-model decision process, given a vector of utilities
+    and the decision thresholds. It works essentially like a version
+    of `ddm_sample` that caches the samples to improve speed (at the cost
+    of memory).
+
+    The constructor takes the following arguments:
+
+    * `u`: a vector of utilities
+    * `lb`: threshold for the incumbents
+    * `ub`: threshold for the candidated
+    * `cache_size`: the number of samples to cache for each combination of
+      the values in `u` (default is 50)
+
+    After creation, you can call it like a function with two arguments `a` and
+    `b` (two integers, the candidate and the incumbent), and it will return
+    a response time and a choice outcome (basically the same as `ddm_sample`).
+    """
+    def __init__(self, u, lb, ub, cache_size = 50):
+        if cache_size <= 0:
+            raise ValueError('invalid `cache_size`, must be positive, given %i' % cache_size)
+        c = np.sqrt(2)
+        n = len(u)
+        self.n = n
+        self.mu = [np.array([(u[a] - u[b]) / c]) for a in range(n) for b in range(n)]
+        self.lb, self.ub = np.array([lb / c]), np.array([ub / c])
+        self.ind = [cache_size for a in range(n) for b in range(n)]
+        self.RT = [None for a in range(n) for b in range(n)]
+        self.CO = [None for a in range(n) for b in range(n)]
+        self.cache_size = cache_size
+
+    def _linind(self, a, b):
+        n = self.n
+        return a * n + b
+
+    def _refresh(self, a, b):
+        k = self._linind(a, b)
+        mu = self.mu[k]
+        lb, ub, cache_size = self.lb, self.ub, self.cache_size
+        dt = 0.000000001 # irrelevant
+        self.RT[k], self.CO[k] = dm.rand_asym(mu, -lb, ub, dt, cache_size)
+        self.ind[k] = 0
+
+    def __call__(self, a, b):
+        k = self._linind(a, b)
+        if self.ind[k] == self.cache_size:
+            self._refresh(a, b)
+            assert self.ind[k] == 0
+        RT, CO = self.RT[k][self.ind[k]], self.CO[k][self.ind[k]]
+        self.ind[k] += 1
+        return RT, CO
+
+
+## Some auxiliary functions to check (and possiblt convert) arguments
 
 def _check_metr_args1(u, lbarrier, ubarrier):
     if not isinstance(u, np.ndarray) or u.dtype != float:
@@ -378,6 +168,8 @@ def _check_metr_args2(n, t, em):
     return t, em
 
 
+## Metropolis-based Multiple-choice samplers
+
 def timed_metropolis(n, sampler, t, em, *, check_args = True):
     """
     Simulate a multiple-choice decision process as a sequence of pariwise comparisons.
@@ -411,20 +203,20 @@ def timed_metropolis(n, sampler, t, em, *, check_args = True):
     else:
         proposal = lambda b: nonuniform_proposal(em, b)
 
-    s = 0.0                  # clock
-    b = np.random.randint(n) # initial choice
+    s = 0.0                       # clock
+    b = np.random.randint(n)      # initial choice (set the incumbent)
     while True:
-        a = proposal(b)
-        RT, CO = sampler(a, b)
-        s += RT
+        a = proposal(b)           # candidate
+        RT, CO = sampler(a, b)    # decision
+        s += RT                   # increase clock
         if s > t:
-            break
+            break                 # time is over
         elif CO:
-            b = a
+            b = a                 # accept the proposal (update incumbent)
     return b
 
 
-def metropolis_ddm_hist(u, lbarrier, ubarrier, t, em = None, num_samples = 10**3, cached_sampler = True):
+def metropolis_ddm_hist(u, lbarrier, ubarrier, t, em = None, num_samples = 10**3, cache_size = 50):
     """
     Call `timed_metropolis` repeatedly, using a drift-diffusion model as the pairwise sampler,
     and return a count of the occurrences of each outcome.
@@ -439,7 +231,9 @@ def metropolis_ddm_hist(u, lbarrier, ubarrier, t, em = None, num_samples = 10**3
     * `t`: time limit
     * `em`: exploration matrix. See the docs for `timed_metropolis`. Defaults to `None`.
     * `num_samples`: number of tests to perform. Defaults to `10**3`.
-    * `cached_sampler`: whether to chache the samples (improves performance, but requires O(n^2) memory).
+    * `cache_size`: if positive, it's the number of samples that get cached in advance for each
+      possible combination of the pairwise choices (improves performance, but requires O(n^2) memory);
+      if zero, disables caching. Defaults to `50`.
 
     Output
     ------
@@ -458,134 +252,18 @@ def metropolis_ddm_hist(u, lbarrier, ubarrier, t, em = None, num_samples = 10**3
     if num_samples < 0:
         raise ValueError('number of samples `num_samples` must be non-negative, given: %i' % num_samples)
 
-    if not isinstance(cached_sampler, bool):
-        raise TypeError('invalid argument `cached_sampler`, expected a `bool`, given: %s' % cname(cached_sampler))
+    if not isinstance(cache_size, int):
+        raise TypeError('invalid `cache_size`, expected an `int`, given: %s' % cname(cache_size))
+    if cache_size < 0:
+        raise ValueError('the `cache_size` must be non-negative, given: %i' % cache_size)
 
-    if cached_sampler:
-        ddm = DDMSampler(u, lbarrier, ubarrier)
-        ddm_sampler = lambda a, b: ddm.sample(a, b)
+    if cache_size > 0:
+        ddm_sampler = DDMSampler(u, lbarrier, ubarrier, cache_size)
     else:
         ddm_sampler = lambda a, b: ddm_sample(u[a], u[b], lbarrier, ubarrier)
 
-    choice_count = np.zeros(len(u), dtype=int)
+    choice_count = np.zeros(n, dtype=int)
     for samples in range(num_samples):
         choice = timed_metropolis(n, ddm_sampler, t, em, check_args=False)
         choice_count[choice] += 1
     return choice_count
-
-def run_comparison():
-    """
-    An interactive function to run a comparison between a Metropolis-DDM multiple-choice
-    simulation and the limiting distribution given by the softmax of the utilities.
-
-    All parameters and settings are input interactively. At the end of the simulation,
-    a plot comparing the frequencies is produced, and some summarizing information is printed
-    on the console.
-    """
-    # This code contains several loops to ensure that the user inputs the right type
-    # of parameters, however some checks are omitted for simplicity.
-    while True:
-        n = int(input('Number of alternatives: '))
-        if n <= 0:
-            print('The number of alternatives must be a positive integer')
-        else:
-            print('Your alternatives are 0,1,...,%i' % (n-1))
-            break
-
-    u = np.arange(n, dtype=float)
-
-    while True:
-        u_options = input('Advanced utility options (0/1)? ')
-        if int(u_options) in (0, 1):
-            break
-        else:
-            print('Please enter a valid input (0/1)')
-
-    if int(u_options) == 1:
-        print('Input utilities: ')
-        u = [float(input('u(%i) = ' % i)) for i in range(n)]
-        u = np.array(u)
-
-    u *= 7.071 / (np.max(u) - np.min(u))
-
-    while True:
-        t = float(input('Time limit: '))
-        if t > 1:
-            break
-        else:
-            print('The time limit needs to be strictly greater than 1')
-
-    upper_barrier = np.log(t+1) / (np.max(u) - np.min(u))
-
-    lower_barrier = upper_barrier
-
-    while True:
-        barrier_options = input('Advanced threshold settings (0/1)? ')
-        if int(barrier_options) in (0, 1):
-            break
-        else:
-            print('Please enter a valid input (0/1)')
-
-    if int(barrier_options) == 1:
-        upper_barrier = float(input('Input acceptance threshold: '))
-        lower_barrier = float(input('Input rejection threshold: '))
-
-    while True:
-        q_o = input('Advanced exploration settings (0/1)? ')
-        if int(q_o) in (0, 1):
-            q_o = int(q_o)
-            break
-        else:
-            print('Please enter a valid input (0/1)')
-
-    if q_o:
-        ro = float(input('Exploration aversion parameter (input a positive real number): '))
-        alt = int(input('Graph (0) or Distance (1)? '))
-        if alt:
-            print('Input the distance matrix of the alternatives:')
-        else:
-            print('Input the graph of the alternatives:')
-        em = explo_matrix_input(n,ro,alt)
-    else:
-        em = None
-
-    while True:
-        num_samples = int(input('Number of samples: '))
-        if num_samples <= 0:
-            print('The number of samples should be a positive integer')
-        else:
-            break
-
-    print()
-    print(n, 'alternatives with normalized utilities', u, 'choose in', t, 'time units\n')
-    print('Acceptance/rejection thresholds: [%f, %f]\n' % (upper_barrier, lower_barrier))
-
-    if q_o:
-        print('Exploration matrix:\n%s\n' % em)
-    else:
-        print('Exploration matrix:\n%s\n' % explo_matrix_unif(n))
-
-    p = np.exp(upper_barrier*u) / np.sum(np.exp(upper_barrier*u)) # softmax
-
-    choice_count = metropolis_ddm_hist(u, lower_barrier, upper_barrier, t, em, num_samples)
-
-    choice_freq = choice_count / np.sum(choice_count)
-
-    print('Choice count: %s\n' % choice_count)
-    print('Total variation distance: %f\n' % (np.linalg.norm(choice_freq - p, 1) / 2))
-    print('Maximum simulation error: %f' % np.max(np.abs(choice_freq - p)))
-
-    # COMPARISON PLOT
-
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-    a = np.arange(n)
-    # labels = [str(u[i]) for i in range(n)]
-    ax.set_xticks(a)
-    # ax.set_xticklabels(labels)
-
-    plt.plot(a, p, label = 'softmax')  # plot softmax888
-
-    plt.plot(a, choice_freq, label = 'simulation') #final choice frequencies LLN for IID copies of algorithm
-    plt.legend()
-    plt.show()

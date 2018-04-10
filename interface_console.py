@@ -17,54 +17,73 @@ import metropolis_ddm
 def isintopt(x):
     return x is None or isinstance(x, int)
 
-def parse_int(msg, *, lb = None, ub = None):
-    assert isintopt(lb) and isintopt(ub)
+def input_int(msg, *, lb = None, ub = None, default = None):
+    assert isintopt(lb) and isintopt(ub) and isintopt(default)
+    if default is not None:
+        assert lb is None or default >= lb
+        assert ub is None or default <= ub
+        msg += ' [default=%i]' % default
+    msg += ': '
 
     while True:
-        x = input(msg + ': ')
+        x = input(msg).strip()
+        if default is not None and len(x) == 0:
+            return default
         try:
             v = int(x)
         except ValueError:
             print('Invalid input, please enter an integer')
             continue
-        if (lb is not None) and v < lb:
+        if lb is not None and v < lb:
             print('Invalid value, expected v >= %i, given: %i' % (lb, v))
             continue
-        if (ub is not None) and v > ub:
+        if ub is not None and v > ub:
             print('Invalid value, expected v <= %i, given: %i' % (ub, v))
             continue
         break
     return v
 
-def parse_bool(q, *, default=True):
+def input_bool(q, *, default=True, yes=['y', 'yes', '1'], no=['n', 'no', '0']):
+    yes = yes if isinstance(yes, list) else [yes]
+    no = no if isinstance(no, list) else [no]
+    y0, n0 = yes[0], no[0]
     deft, deff = -1, -1
     if default is True:
-        opts = '[y]/n'
+        opts = '[%s]/%s' % (y0, n0)
         deft = 0
     elif default is False:
-        opts = 'y/[n]'
+        opts = '%s/[%s]' % (y0, n0)
         deff = 0
     else:
-        opts = 'y/n'
+        opts = '%s/%s' % (y0, n0)
     msg = q + (' (%s)? ' % opts)
     while True:
         x = input(msg).upper().strip()
-        if len(x) == deft or x in ['Y', 'YES', '1']:
+        if len(x) == deft or x in map(lambda s: s.upper(), yes):
             return True
-        if len(x) == deff or x in ['N', 'NO', '0']:
+        if len(x) == deff or x in map(lambda s: s.upper(), no):
             return False
-        print("Invalid input, please enter 'y' or 'n' (or '1'/'0' or 'yes'/'no')")
+        print("Invalid input, please enter '%s' or '%s'" % (y0, n0))
 
 def isfloatopt(x):
     return x is None or isinstance(x, float)
 
-def parse_float(msg, *, lbt = None, lbe = None, ubt = None, ube = None):
+def input_float(msg, *, lbt = None, lbe = None, ubt = None, ube = None, default = None):
     assert lbt is None or lbe is None
     assert ubt is None or ube is None
-    assert isfloatopt(lbt) and isfloatopt(lbe) and isfloatopt(ubt) and isfloatopt(ube)
+    assert isfloatopt(lbt) and isfloatopt(lbe) and isfloatopt(ubt) and isfloatopt(ube) and isfloatopt(default)
+    if default is not None:
+        assert lbe is None or default >= lbe
+        assert lbt is None or default > lbt
+        assert ube is None or default <= ube
+        assert ubt is None or default < ubt
+        msg += ' [default=%g]' % default
+    msg += ': '
 
     while True:
-        x = input(msg + ': ')
+        x = input(msg).strip()
+        if default is not None and len(x) == 0:
+            return default
         try:
             v = float(x)
         except ValueError:
@@ -73,17 +92,17 @@ def parse_float(msg, *, lbt = None, lbe = None, ubt = None, ube = None):
         if v != v:
             print('Invalid input, `nan` is not allowed')
             continue
-        if (lbt is not None) and v <= lbt:
-            print('Invalid value, expected v > %f, given: %f' % (lbt, v))
+        if lbt is not None and v <= lbt:
+            print('Invalid value, expected v > %g, given: %g' % (lbt, v))
             continue
-        if (lbe is not None) and v < lbe:
-            print('Invalid value, expected v >= %f, given: %f' % (lbe, v))
+        if lbe is not None and v < lbe:
+            print('Invalid value, expected v >= %g, given: %g' % (lbe, v))
             continue
-        if (ubt is not None) and v >= ubt:
-            print('Invalid value, expected v < %f, given: %f' % (ubt, v))
+        if ubt is not None and v >= ubt:
+            print('Invalid value, expected v < %g, given: %g' % (ubt, v))
             continue
-        if (ube is not None) and v > ube:
-            print('Invalid value, expected v <= %f, given: %f' % (ube, v))
+        if ube is not None and v > ube:
+            print('Invalid value, expected v <= %g, given: %g' % (ube, v))
             continue
         break
     return v
@@ -144,7 +163,7 @@ def explo_matrix_input(n, ro, alt):
     if not isinstance(ro, float):
         raise TypeError('argument `ro` must be a float, given: %s' % cname(ro))
     if ro < 0:
-        raise ValueError('argument `ro` must be >= 0, given: %f' % ro)
+        raise ValueError('argument `ro` must be >= 0, given: %g' % ro)
     if alt not in (0,1):
         raise ValueError('argument `alt` must be 0 or 1, given: %s' % alt)
 
@@ -159,44 +178,43 @@ def explo_matrix_input(n, ro, alt):
 
         while True:
             print('Current Distance Matrix:\n%s' % dist)
-            s = input('Alternatives (a,b): ')
 
             while True:
+                s = input('Alternatives (a,b): ')
                 ls = s.split(',')
                 if len(ls) == 2 and ls[0].isdigit() and ls[1].isdigit():
                     break
                 else:
                     print('Invalid alternatives input form. It must be of the type (a,b) with a and b integers')
-                    s = input('Alternatives (a,b): ')
 
             a,b = int(ls[0]),int(ls[1])
 
             if not (0 <= a < n): # if a >= n or a < 0:
                 print('Invalid alternative, a must be an integer between 0 and %i' % (n-1))
-                if parse_bool('Continue matrix adjustments'):
+                if input_bool('Continue matrix adjustments'):
                     continue
                 else:
                     break
 
             if not (0 <= b < n):
                 print('Invalid alternative, b must be an integer between 0 and %i' % (n-1))
-                if parse_bool('Continue matrix adjustments'):
+                if input_bool('Continue matrix adjustments'):
                     continue
                 else:
                     break
 
             if a == b:
                 print('The distance between an alternative and itself cannot be modified (0 by definition of semi-metric).')
-                if parse_bool('Continue matrix adjustments'):
+                if input_bool('Continue matrix adjustments'):
                     continue
                 else:
                     break
 
             if dist[a,b] != 1:
-                if not parse_bool('Distance already adjusted, overwrite'):
+                if not input_bool('Distance already adjusted, overwrite'):
                     continue
 
-            d = parse_float('Enter new distance between %i and %i' % (a, b), lbt = 0.0)
+            d = input_float('Enter new distance between %i and %i' % (a, b), lbt = 0.0)
             if np.isposinf(d):
                 g_aux[a,b] = 0
                 g_aux[b,a] = 0
@@ -211,7 +229,7 @@ def explo_matrix_input(n, ro, alt):
                 dist[a,b] = d
                 dist[b,a] = d
 
-            if parse_bool('Continue matrix adjustments'):
+            if input_bool('Continue matrix adjustments'):
                 continue
             else:
                 break
@@ -226,40 +244,38 @@ def explo_matrix_input(n, ro, alt):
         while True:
             print('Current Graph:\n%s' % graph)
 
-            s = input('Alternatives (a,b): ')
-
             while True:
+                s = input('Alternatives (a,b): ')
                 ls = s.split(',')
                 if len(ls) == 2 and ls[0].isdigit() and ls[1].isdigit():
                     break
                 else:
                     print('Invalid alternatives input form. It must be of the type (a,b) with a and b integers')
-                    s = input('Alternatives (a,b): ')
 
             a,b = int(ls[0]),int(ls[1])
 
             if not (0 <= a < n):
                 print('Invalid alternative, a must be an integer between 0 and %i' % (n-1))
-                if parse_bool('Continue graph adjustments'):
+                if input_bool('Continue graph adjustments'):
                     continue
                 else:
                     break
 
             if not (0 <= b < n):
                 print('Invalid alternative, b must be an integer between 0 and %i' % (n-1))
-                if parse_bool('Continue graph adjustments'):
+                if input_bool('Continue graph adjustments'):
                     continue
                 else:
                     break
 
             if a == b:
                 print('Invalid alternatives, no edges from a vertex to itself are allowed.')
-                if parse_bool('Continue graph adjustments'):
+                if input_bool('Continue graph adjustments'):
                     continue
                 else:
                     break
 
-            d = parse_bool('Connect %i and %i' % (a, b), default=False)
+            d = input_bool('Connect %i and %i' % (a, b), default=(not graph[a,b]))
             graph[a,b] = d
             graph[b,a] = d
 
@@ -270,7 +286,7 @@ def explo_matrix_input(n, ro, alt):
                 graph[a,b] = 1
                 graph[b,a] = 1
 
-            if parse_bool('Continue graph adjustments'):
+            if input_bool('Continue graph adjustments'):
                 continue
             else:
                 break
@@ -300,38 +316,38 @@ def run_comparison():
     """
     # This code contains several loops to ensure that the user inputs the right type
     # of parameters, however some checks are omitted for simplicity.
-    n = parse_int('Number of alternatives', lb = 1)
+    n = input_int('Number of alternatives', lb = 1, default = 5)
 
     u = np.arange(n, dtype=float)
 
-    if parse_bool('Advanced utility options', default = False):
+    if input_bool('Advanced utility options', default = False):
         print('Input utilities: ')
-        u = [parse_float('u[%i]' % i) for i in range(n)]
+        u = [input_float('u[%i]' % i) for i in range(n)]
         u = np.array(u)
 
     u *= 7.071 / (np.max(u) - np.min(u))
 
-    t = parse_float('Time limit', lbt = 1.0, ubt = np.inf)
+    t = input_float('Time limit', lbt = 1.0, ubt = np.inf, default = 2.0)
 
     upper_barrier = np.log(t+1) / (np.max(u) - np.min(u))
     lower_barrier = upper_barrier
 
-    if parse_bool('Advanced threshold settings', default = False):
-        upper_barrier = parse_float('Input acceptance threshold', lbt = 0.0)
-        lower_barrier = parse_float('Input rejection threshold', lbt = 0.0)
+    if input_bool('Advanced threshold settings', default = False):
+        upper_barrier = input_float('Input acceptance threshold', lbt = 0.0)
+        lower_barrier = input_float('Input rejection threshold', lbt = 0.0)
 
-    if parse_bool('Advanced exploration settings', default = False):
-        ro = parse_float('Exploration aversion parameter (input a positive real number)', lbt = 0.0)
-        alt = parse_int('Choose Graph (0) or Distance (1)', lb = 0, ub = 1)
+    if input_bool('Advanced exploration settings', default = False):
+        ro = input_float('Exploration aversion parameter (input a positive real number)', lbt = 0.0)
+        alt = input_bool('Distance or Graph', yes=['d', '1'], no=['g', '0'])
         em = explo_matrix_input(n, ro, alt)
     else:
         em = None
 
-    num_samples = parse_int('Number of samples', lb = 0)
+    num_samples = input_int('Number of samples', lb = 0, default = 10**3)
 
     print()
     print(n, 'alternatives with normalized utilities', u, 'choose in', t, 'time units\n')
-    print('Acceptance/rejection thresholds: [%f, %f]\n' % (upper_barrier, lower_barrier))
+    print('Acceptance/rejection thresholds: [%g, %g]\n' % (upper_barrier, lower_barrier))
 
     if em is not None:
         print('Exploration matrix:\n%s\n' % em)
@@ -345,8 +361,8 @@ def run_comparison():
     choice_freq = choice_count / np.sum(choice_count)
 
     print('Choice count: %s\n' % choice_count)
-    print('Total variation distance: %f\n' % (np.linalg.norm(choice_freq - p, 1) / 2))
-    print('Maximum simulation error: %f' % np.max(np.abs(choice_freq - p)))
+    print('Total variation distance: %g\n' % (np.linalg.norm(choice_freq - p, 1) / 2))
+    print('Maximum simulation error: %g' % np.max(np.abs(choice_freq - p)))
 
     # COMPARISON PLOT
 

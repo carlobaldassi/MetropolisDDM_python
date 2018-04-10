@@ -14,8 +14,14 @@ from scipy.sparse.csgraph import connected_components
 
 import metropolis_ddm
 
+class Abort(Exception):
+    pass
+
 def isintopt(x):
     return x is None or isinstance(x, int)
+
+def isstropt(x):
+    return x is None or isinstance(x, str)
 
 def input_int(msg, *, lb = None, ub = None, default = None):
     assert isintopt(lb) and isintopt(ub) and isintopt(default)
@@ -107,6 +113,34 @@ def input_float(msg, *, lbt = None, lbe = None, ubt = None, ube = None, default 
         break
     return v
 
+def input_indices(msg, n, m = None, *, filt = None, abort = None):
+    assert isinstance(msg, str) and isinstance(n, int) and isintopt(m) and isstropt(abort)
+    if m is None:
+        m = n
+    if abort is not None:
+        msg += " ['%s' to abort]" % abort
+    msg += ': '
+    while True:
+        s = input(msg).strip()
+        if abort is not None and s == abort:
+            raise Abort()
+        ls = s.split(',')
+        if len(ls) != 2:
+            print('Invalid format, you need to enter two indices separated by a comma')
+            continue
+        try:
+            i, j = int(ls[0]), int(ls[1])
+        except ValueError:
+            print('Invalid indices, please enter two integers')
+            continue
+        if not (0 <= i < n and 0 <= j < m):
+            print('Out of bounds, matrix size is %s×%s, given: %i,%i' % (i, j))
+            continue
+        if filt is not None and not filt(i, j):
+            print('Invalid choice %i,%i' % (i, j))
+        break
+    return i, j
+
 
 # UNIFORM EXPLORATION MATRIX
 # this function is not actually used for computation (we use uniform_proposal in that case),
@@ -123,7 +157,7 @@ def explo_matrix_unif(n):
 
     exp_matr = np.zeros((n,n))
 
-    mask = exp_matr != dist #boolean mask (matrix)
+    mask = exp_matr != dist # boolean mask (matrix)
 
     exp_matr[mask] = (1 / (n-1)) / dist[mask]
     exp_matr[~mask] = 1 - (np.sum(exp_matr, axis=0) - np.diag(exp_matr))
@@ -153,7 +187,6 @@ def explo_matrix_unif(n):
 # After the input procedure, the distance matrix is normalized so that its minimum entry
 # outside the main diagonal is 1 (we do not need to do so for the graph because by construction
 # the minimum distance is already 1).
-#
 
 def explo_matrix_input(n, ro, alt):
     if not isinstance(n, int):
@@ -179,48 +212,17 @@ def explo_matrix_input(n, ro, alt):
         while True:
             print('Current Distance Matrix:\n%s' % dist)
 
-            while True:
-                s = input('Alternatives (a,b): ')
-                ls = s.split(',')
-                if len(ls) == 2 and ls[0].isdigit() and ls[1].isdigit():
-                    break
-                else:
-                    print('Invalid alternatives input form. It must be of the type (a,b) with a and b integers')
+            try:
+                a, b = input_indices('Choose two indices (i,j)', n, filt = lambda i,j: i != j, abort = 'q')
+            except Abort:
+                break
 
-            a,b = int(ls[0]),int(ls[1])
-
-            if not (0 <= a < n): # if a >= n or a < 0:
-                print('Invalid alternative, a must be an integer between 0 and %i' % (n-1))
-                if input_bool('Continue matrix adjustments'):
-                    continue
-                else:
-                    break
-
-            if not (0 <= b < n):
-                print('Invalid alternative, b must be an integer between 0 and %i' % (n-1))
-                if input_bool('Continue matrix adjustments'):
-                    continue
-                else:
-                    break
-
-            if a == b:
-                print('The distance between an alternative and itself cannot be modified (0 by definition of semi-metric).')
-                if input_bool('Continue matrix adjustments'):
-                    continue
-                else:
-                    break
-
-            if dist[a,b] != 1:
-                if not input_bool('Distance already adjusted, overwrite'):
-                    continue
-
-            d = input_float('Enter new distance between %i and %i' % (a, b), lbt = 0.0)
+            d = input_float('Enter new d[%i,%i]' % (a, b), lbt = 0.0)
             if np.isposinf(d):
                 g_aux[a,b] = 0
                 g_aux[b,a] = 0
 
-            cc1 = connected_components(g_aux)
-            if cc1[0] != 1:
+            if connected_components(g_aux)[0] != 1:
                 print('WARNING! This action disconnects the set of alternatives.')
                 print('This is not allowed. The previous distance is maintained')
                 g_aux[a,b] = 1
@@ -228,11 +230,6 @@ def explo_matrix_input(n, ro, alt):
             else:
                 dist[a,b] = d
                 dist[b,a] = d
-
-            if input_bool('Continue matrix adjustments'):
-                continue
-            else:
-                break
 
         dist /= np.min(dist[mask]) #normalization
 
@@ -244,63 +241,32 @@ def explo_matrix_input(n, ro, alt):
         while True:
             print('Current Graph:\n%s' % graph)
 
-            while True:
-                s = input('Alternatives (a,b): ')
-                ls = s.split(',')
-                if len(ls) == 2 and ls[0].isdigit() and ls[1].isdigit():
-                    break
-                else:
-                    print('Invalid alternatives input form. It must be of the type (a,b) with a and b integers')
+            try:
+                a, b = input_indices('Choose two indices (i,j) to flip', n, filt = lambda i,j: i != j, abort = 'q')
+            except Abort:
+                break
 
-            a,b = int(ls[0]),int(ls[1])
-
-            if not (0 <= a < n):
-                print('Invalid alternative, a must be an integer between 0 and %i' % (n-1))
-                if input_bool('Continue graph adjustments'):
-                    continue
-                else:
-                    break
-
-            if not (0 <= b < n):
-                print('Invalid alternative, b must be an integer between 0 and %i' % (n-1))
-                if input_bool('Continue graph adjustments'):
-                    continue
-                else:
-                    break
-
-            if a == b:
-                print('Invalid alternatives, no edges from a vertex to itself are allowed.')
-                if input_bool('Continue graph adjustments'):
-                    continue
-                else:
-                    break
-
-            d = input_bool('Connect %i and %i' % (a, b), default=(not graph[a,b]))
+            d = 1 - graph[a,b]
             graph[a,b] = d
             graph[b,a] = d
 
-            cc1 = connected_components(graph)
-            if cc1[0] != 1:
+            if d == 0 and connected_components(graph)[0] != 1:
                 print('WARNING! This action disconnects the set of alternatives.')
                 print('This is not allowed. The previous situation is maintained')
                 graph[a,b] = 1
                 graph[b,a] = 1
 
-            if input_bool('Continue graph adjustments'):
-                continue
-            else:
-                break
-
         print('Final Graph:')
         print(graph)
         dist = floyd_warshall(graph)
+        print()
 
     print('Final Distance Matrix:')
     print(dist)
 
     exp_matr = np.zeros((n,n))
     exp_matr[mask] = (1/(n-1)) * 1/(dist[mask]**ro)
-    exp_matr[~mask] = 1 - (np.sum(exp_matr,axis=0) - np.diag(exp_matr))
+    exp_matr[~mask] = 1 - (np.sum(exp_matr, axis=0) - np.diag(exp_matr))
 
     return np.abs(exp_matr)
 
@@ -337,7 +303,7 @@ def run_comparison():
         lower_barrier = input_float('Input rejection threshold', lbt = 0.0)
 
     if input_bool('Advanced exploration settings', default = False):
-        ro = input_float('Exploration aversion parameter (input a positive real number)', lbt = 0.0)
+        ro = input_float('Exploration aversion parameter', lbt = 0.0, default = 1.0)
         alt = input_bool('Distance or Graph', yes=['d', '1'], no=['g', '0'])
         em = explo_matrix_input(n, ro, alt)
     else:

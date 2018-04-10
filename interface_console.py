@@ -14,6 +14,81 @@ from scipy.sparse.csgraph import connected_components
 
 import metropolis_ddm
 
+def isintopt(x):
+    return x is None or isinstance(x, int)
+
+def parse_int(msg, *, lb = None, ub = None):
+    assert isintopt(lb) and isintopt(ub)
+
+    while True:
+        x = input(msg + ': ')
+        try:
+            v = int(x)
+        except ValueError:
+            print('Invalid input, please enter an integer')
+            continue
+        if (lb is not None) and v < lb:
+            print('Invalid value, expected v >= %i, given: %i' % (lb, v))
+            continue
+        if (ub is not None) and v > ub:
+            print('Invalid value, expected v <= %i, given: %i' % (ub, v))
+            continue
+        break
+    return v
+
+def parse_bool(q, *, default=True):
+    deft, deff = -1, -1
+    if default is True:
+        opts = '[y]/n'
+        deft = 0
+    elif default is False:
+        opts = 'y/[n]'
+        deff = 0
+    else:
+        opts = 'y/n'
+    msg = q + (' (%s)? ' % opts)
+    while True:
+        x = input(msg).upper().strip()
+        if len(x) == deft or x in ['Y', 'YES', '1']:
+            return True
+        if len(x) == deff or x in ['N', 'NO', '0']:
+            return False
+        print("Invalid input, please enter 'y' or 'n' (or '1'/'0' or 'yes'/'no')")
+
+def isfloatopt(x):
+    return x is None or isinstance(x, float)
+
+def parse_float(msg, *, lbt = None, lbe = None, ubt = None, ube = None):
+    assert lbt is None or lbe is None
+    assert ubt is None or ube is None
+    assert isfloatopt(lbt) and isfloatopt(lbe) and isfloatopt(ubt) and isfloatopt(ube)
+
+    while True:
+        x = input(msg + ': ')
+        try:
+            v = float(x)
+        except ValueError:
+            print('Invalid input, please enter a float')
+            continue
+        if v != v:
+            print('Invalid input, `nan` is not allowed')
+            continue
+        if (lbt is not None) and v <= lbt:
+            print('Invalid value, expected v > %f, given: %f' % (lbt, v))
+            continue
+        if (lbe is not None) and v < lbe:
+            print('Invalid value, expected v >= %f, given: %f' % (lbe, v))
+            continue
+        if (ubt is not None) and v >= ubt:
+            print('Invalid value, expected v < %f, given: %f' % (ubt, v))
+            continue
+        if (ube is not None) and v > ube:
+            print('Invalid value, expected v <= %f, given: %f' % (ube, v))
+            continue
+        break
+    return v
+
+
 # UNIFORM EXPLORATION MATRIX
 # this function is not actually used for computation (we use uniform_proposal in that case),
 # it is used for plotting the exploration matrix when it is uniform
@@ -77,7 +152,8 @@ def explo_matrix_input(n, ro, alt):
     dist[np.diag_indices(n)] = 0
     mask = dist != 0
 
-    if alt:                                                     # DISTANCE
+    if alt: # DISTANCE
+        print('Input the distance matrix of the alternatives:')
 
         g_aux = dist.copy() #corresponding graph of the distance matrix, will be used to check connected components
 
@@ -97,45 +173,33 @@ def explo_matrix_input(n, ro, alt):
 
             if not (0 <= a < n): # if a >= n or a < 0:
                 print('Invalid alternative, a must be an integer between 0 and %i' % (n-1))
-                c = int(input('Continue matrix adjustments (0/1)? '))
-                if c:
+                if parse_bool('Continue matrix adjustments'):
                     continue
                 else:
                     break
 
             if not (0 <= b < n):
                 print('Invalid alternative, b must be an integer between 0 and %i' % (n-1))
-                c = int(input('Continue matrix adjustments (0/1)? '))
-                if c:
+                if parse_bool('Continue matrix adjustments'):
                     continue
                 else:
                     break
 
             if a == b:
                 print('The distance between an alternative and itself cannot be modified (0 by definition of semi-metric).')
-                c = int(input('Continue matrix adjustments (0/1)? '))
-                if c:
+                if parse_bool('Continue matrix adjustments'):
                     continue
                 else:
                     break
 
             if dist[a,b] != 1:
-                o = int(input('Distance already adjusted, overwrite (0/1)? '))
-                if not o:
+                if not parse_bool('Distance already adjusted, overwrite'):
                     continue
 
-            while True:
-                d = input('New distance between %i and %i? ' % (a, b))
-                if d in ('inf', 'np.inf'):
-                    d = np.inf
-                    g_aux[a,b] = 0
-                    g_aux[b,a] = 0
-                    break
-                elif float(d) <= 0:
-                    print('Invalid distance, it must be a positive float')
-                else:
-                    d = float(d)
-                    break
+            d = parse_float('Enter new distance between %i and %i' % (a, b), lbt = 0.0)
+            if np.isposinf(d):
+                g_aux[a,b] = 0
+                g_aux[b,a] = 0
 
             cc1 = connected_components(g_aux)
             if cc1[0] != 1:
@@ -147,16 +211,16 @@ def explo_matrix_input(n, ro, alt):
                 dist[a,b] = d
                 dist[b,a] = d
 
-            c = int(input('Continue matrix adjustments (0/1)? '))
-            if c:
+            if parse_bool('Continue matrix adjustments'):
                 continue
             else:
                 break
 
         dist /= np.min(dist[mask]) #normalization
 
+    else: #GRAPH
+        print('Input the graph of the alternatives:')
 
-    else:                                                           #GRAPH
         graph = dist.astype(int)  #makes a copy of dist consisting of integers
 
         while True:
@@ -176,35 +240,26 @@ def explo_matrix_input(n, ro, alt):
 
             if not (0 <= a < n):
                 print('Invalid alternative, a must be an integer between 0 and %i' % (n-1))
-                c = int(input('Continue graph adjustments (0/1)? '))
-                if c:
+                if parse_bool('Continue graph adjustments'):
                     continue
                 else:
                     break
 
             if not (0 <= b < n):
                 print('Invalid alternative, b must be an integer between 0 and %i' % (n-1))
-                c = int(input('Continue graph adjustments (0/1)? '))
-                if c:
+                if parse_bool('Continue graph adjustments'):
                     continue
                 else:
                     break
 
             if a == b:
                 print('Invalid alternatives, no edges from a vertex to itself are allowed.')
-                c = int(input('Continue graph adjustments (0/1)? '))
-                if c:
+                if parse_bool('Continue graph adjustments'):
                     continue
                 else:
                     break
 
-            while True:
-                d = int(input('Connect %i and %i (0/1)? ' % (a, b)))
-                if d not in (0,1):
-                    print('Invalid value, it must be either 0 or 1')
-                else:
-                    break
-
+            d = parse_bool('Connect %i and %i' % (a, b), default=False)
             graph[a,b] = d
             graph[b,a] = d
 
@@ -215,15 +270,13 @@ def explo_matrix_input(n, ro, alt):
                 graph[a,b] = 1
                 graph[b,a] = 1
 
-            c = int(input('Continue graph adjustments (0/1)? '))
-            if c:
+            if parse_bool('Continue graph adjustments'):
                 continue
             else:
                 break
 
         print('Final Graph:')
         print(graph)
-        #FLOYD WARSHALL
         dist = floyd_warshall(graph)
 
     print('Final Distance Matrix:')
@@ -247,82 +300,40 @@ def run_comparison():
     """
     # This code contains several loops to ensure that the user inputs the right type
     # of parameters, however some checks are omitted for simplicity.
-    while True:
-        n = int(input('Number of alternatives: '))
-        if n <= 0:
-            print('The number of alternatives must be a positive integer')
-        else:
-            print('Your alternatives are 0,1,...,%i' % (n-1))
-            break
+    n = parse_int('Number of alternatives', lb = 1)
 
     u = np.arange(n, dtype=float)
 
-    while True:
-        u_options = input('Advanced utility options (0/1)? ')
-        if int(u_options) in (0, 1):
-            break
-        else:
-            print('Please enter a valid input (0/1)')
-
-    if int(u_options) == 1:
+    if parse_bool('Advanced utility options', default = False):
         print('Input utilities: ')
-        u = [float(input('u(%i) = ' % i)) for i in range(n)]
+        u = [parse_float('u[%i]' % i) for i in range(n)]
         u = np.array(u)
 
     u *= 7.071 / (np.max(u) - np.min(u))
 
-    while True:
-        t = float(input('Time limit: '))
-        if t > 1:
-            break
-        else:
-            print('The time limit needs to be strictly greater than 1')
+    t = parse_float('Time limit', lbt = 1.0, ubt = np.inf)
 
     upper_barrier = np.log(t+1) / (np.max(u) - np.min(u))
     lower_barrier = upper_barrier
 
-    while True:
-        barrier_options = input('Advanced threshold settings (0/1)? ')
-        if int(barrier_options) in (0, 1):
-            break
-        else:
-            print('Please enter a valid input (0/1)')
+    if parse_bool('Advanced threshold settings', default = False):
+        upper_barrier = parse_float('Input acceptance threshold', lbt = 0.0)
+        lower_barrier = parse_float('Input rejection threshold', lbt = 0.0)
 
-    if int(barrier_options) == 1:
-        upper_barrier = float(input('Input acceptance threshold: '))
-        lower_barrier = float(input('Input rejection threshold: '))
-
-    while True:
-        q_o = input('Advanced exploration settings (0/1)? ')
-        if int(q_o) in (0, 1):
-            q_o = int(q_o)
-            break
-        else:
-            print('Please enter a valid input (0/1)')
-
-    if q_o:
-        ro = float(input('Exploration aversion parameter (input a positive real number): '))
-        alt = int(input('Graph (0) or Distance (1)? '))
-        if alt:
-            print('Input the distance matrix of the alternatives:')
-        else:
-            print('Input the graph of the alternatives:')
-        em = explo_matrix_input(n,ro,alt)
+    if parse_bool('Advanced exploration settings', default = False):
+        ro = parse_float('Exploration aversion parameter (input a positive real number)', lbt = 0.0)
+        alt = parse_int('Choose Graph (0) or Distance (1)', lb = 0, ub = 1)
+        em = explo_matrix_input(n, ro, alt)
     else:
         em = None
 
-    while True:
-        num_samples = int(input('Number of samples: '))
-        if num_samples <= 0:
-            print('The number of samples should be a positive integer')
-        else:
-            break
+    num_samples = parse_int('Number of samples', lb = 0)
 
     print()
     print(n, 'alternatives with normalized utilities', u, 'choose in', t, 'time units\n')
     print('Acceptance/rejection thresholds: [%f, %f]\n' % (upper_barrier, lower_barrier))
 
-    if q_o:
+    if em is not None:
         print('Exploration matrix:\n%s\n' % em)
     else:
         print('Exploration matrix:\n%s\n' % explo_matrix_unif(n))

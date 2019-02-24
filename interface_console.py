@@ -284,7 +284,7 @@ def run_comparison():
     """
     # This code contains several loops to ensure that the user inputs the right type
     # of parameters, however some checks are omitted for simplicity.
-    n = input_int('Number of alternatives', lb = 1, default = 5)
+    n = input_int('Number of alternatives', lb = 1, default = 6)
 
     u = np.arange(n, dtype=float)
 
@@ -292,8 +292,8 @@ def run_comparison():
         print('Input utilities: ')
         u = [input_float('u[%i]' % i) for i in range(n)]
         u = np.array(u)
-
-    u *= 7.071 / (np.max(u) - np.min(u))
+    else:
+        u *= 7.071 / (np.max(u) - np.min(u))
 
     t = input_float('Time limit', lbt = 1.0, ubt = np.inf, default = 2.0)
 
@@ -317,7 +317,7 @@ def run_comparison():
     ts = 'RUNNING ' + str(num_samples) + ' SIMULATIONS WITH THE FOLLOWING PARAMETERS:'
     print(ts + '\n' + '-'*len(ts) + '\n')
 
-    print(n, 'alternatives with normalized utilities', u, 'chosen in', t, 'time units\n')
+    print(n, 'alternatives with utilities', u, 'chosen in', t, 'time units\n')
 
     print('Acceptance/rejection thresholds: [%g, %g]\n' % (upper_barrier, lower_barrier))
 

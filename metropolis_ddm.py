@@ -8,6 +8,7 @@
 
 import numpy as np
 import ddm as dm
+from numbers import Real, Integral
 
 ## Some auxiliary functions
 
@@ -136,7 +137,7 @@ def _check_metr_args1(u, lbarrier, ubarrier):
     if len(u) == 0:
         raise ValueError('empty utilities list')
 
-    if not (isinstance(lbarrier, (int,float)) and isinstance(ubarrier, (int,float))):
+    if not (isinstance(lbarrier, Real) and isinstance(ubarrier, Real)):
         raise TypeError('thresholds lbarrier,ubarrier must be ints or floats, given: %s,%s' % (cname(lbarrier), cname(ubarrier)))
     lbarrier, ubarrier = float(lbarrier), float(ubarrier)
     if lbarrier <= 0 or ubarrier <= 0:
@@ -145,9 +146,9 @@ def _check_metr_args1(u, lbarrier, ubarrier):
     return u, lbarrier, ubarrier
 
 def _check_metr_args2(n, t, em):
-    assert isinstance(n, int) and n > 0
+    assert isinstance(n, Integral) and n > 0
 
-    if not isinstance(t, (int,float)):
+    if not isinstance(t, Real):
         raise TypeError('time limit `t` must be an int or a float, given: %s' % cname(t))
     t = float(t)
     if t <= 0:
@@ -248,13 +249,13 @@ def metropolis_ddm_hist(u, lbarrier, ubarrier, t, em = None, num_samples = 10**3
     n = len(u)
     t, em = _check_metr_args2(n, t, em)
 
-    if not isinstance(num_samples, int):
-        raise TypeError('number of samples `num_samples` must be an int, given: %s' % cname(num_samples))
+    if not isinstance(num_samples, Integral):
+        raise TypeError('number of samples `num_samples` must be an integer, given: %s' % cname(num_samples))
     if num_samples < 0:
         raise ValueError('number of samples `num_samples` must be non-negative, given: %i' % num_samples)
 
-    if not isinstance(cache_size, int):
-        raise TypeError('invalid `cache_size`, expected an `int`, given: %s' % cname(cache_size))
+    if not isinstance(cache_size, Integral):
+        raise TypeError('invalid `cache_size`, expected an integer, given: %s' % cname(cache_size))
     if cache_size < 0:
         raise ValueError('the `cache_size` must be non-negative, given: %i' % cache_size)
 

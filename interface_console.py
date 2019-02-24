@@ -13,12 +13,14 @@ from scipy.sparse.csgraph import floyd_warshall
 from scipy.sparse.csgraph import connected_components
 
 import metropolis_ddm
+from numbers import Real, Integral
+from time import time
 
 class Abort(Exception):
     pass
 
 def isintopt(x):
-    return x is None or isinstance(x, int)
+    return x is None or isinstance(x, Integral)
 
 def isstropt(x):
     return x is None or isinstance(x, str)
@@ -72,7 +74,7 @@ def input_bool(q, *, default=True, yes=['y', 'yes', '1'], no=['n', 'no', '0']):
         print("Invalid input, please enter '%s' or '%s'" % (y0, n0))
 
 def isfloatopt(x):
-    return x is None or isinstance(x, float)
+    return x is None or isinstance(x, Real)
 
 def input_float(msg, *, lbt = None, lbe = None, ubt = None, ube = None, default = None):
     assert lbt is None or lbe is None
@@ -147,7 +149,7 @@ def input_indices(msg, n, m = None, *, filt = None, abort = None):
 # it is used for plotting the exploration matrix when it is uniform
 
 def explo_matrix_unif(n):
-    if not isinstance(n, int):
+    if not isinstance(n, Integral):
         raise TypeError('argument `n` must be an int, given: %s' % cname(n))
     if n < 2:
         raise ValueError('argument `n` must be >= 2, given: %i' % n)
@@ -189,11 +191,11 @@ def explo_matrix_unif(n):
 # the minimum distance is already 1).
 
 def explo_matrix_input(n, ro, alt):
-    if not isinstance(n, int):
+    if not isinstance(n, Integral):
         raise TypeError('argument `n` must be an int, given: %s' % cname(n))
     if n <= 0:
         raise ValueError('argument `n` must be > 0, given: %i' % n)
-    if not isinstance(ro, float):
+    if not isinstance(ro, Real):
         raise TypeError('argument `ro` must be a float, given: %s' % cname(ro))
     if ro < 0:
         raise ValueError('argument `ro` must be >= 0, given: %g' % ro)
@@ -312,7 +314,11 @@ def run_comparison():
     num_samples = input_int('Number of samples', lb = 0, default = 10**3)
 
     print()
-    print(n, 'alternatives with normalized utilities', u, 'choose in', t, 'time units\n')
+    ts = 'RUNNING ' + str(num_samples) + ' SIMULATIONS WITH THE FOLLOWING PARAMETERS:'
+    print(ts + '\n' + '-'*len(ts) + '\n')
+
+    print(n, 'alternatives with normalized utilities', u, 'chosen in', t, 'time units\n')
+
     print('Acceptance/rejection thresholds: [%g, %g]\n' % (upper_barrier, lower_barrier))
 
     if em is not None:
@@ -322,9 +328,14 @@ def run_comparison():
 
     p = np.exp(upper_barrier*u) / np.sum(np.exp(upper_barrier*u)) # softmax
 
+    runt = time()
     choice_count = metropolis_ddm.metropolis_ddm_hist(u, lower_barrier, upper_barrier, t, em, num_samples)
+    runt = time() - runt
 
     choice_freq = choice_count / np.sum(choice_count)
+
+    ts = 'SIMULATION COMPLETED IN %.2g SECONDS. RESULTS:' % runt
+    print(ts + '\n' + '-'*len(ts) + '\n')
 
     print('Choice count: %s\n' % choice_count)
     print('Total variation distance: %g\n' % (np.linalg.norm(choice_freq - p, 1) / 2))
@@ -335,9 +346,9 @@ def run_comparison():
     fig = plt.figure()
     ax = fig.add_subplot(111)
     a = np.arange(n)
-    # labels = [str(u[i]) for i in range(n)]
+    labels = ["%.2g" % u[i] for i in range(n)]
     ax.set_xticks(a)
-    # ax.set_xticklabels(labels)
+    ax.set_xticklabels(labels)
 
     plt.plot(a, p, label = 'softmax')  # plot softmax888
 

@@ -23,9 +23,9 @@ The core algorithms are in the `metropolis_ddm` module. The `timed_metropolis` f
 one simulation run.  The `metropolis_ddm_hist` function runs the model repeatedly and returns a
 count of the number of times each alternative was chosen.
 
-For example to run $10^3$ simulations with 4 alternatives, utilities $(1, 3, 5, 7)$, lower
-(incumbent) threshold at $-1$, upper (candidate) threshold at $2$, time limit $5$, with uniform
-exploration matrix (the default), you can use:
+For example to run <i>10³</i> simulations with 4 alternatives, utilities <i>(1, 3, 5, 7)</i>, lower
+(incumbent) threshold at <i>-1</i>, upper (candidate) threshold at <i>2</i>, time limit <i>5</i>,
+with uniform exploration matrix (the default), you can use:
 
 ```python
 In [1]: from metropolis_ddm import metropolis_ddm_hist

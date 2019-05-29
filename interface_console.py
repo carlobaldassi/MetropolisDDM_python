@@ -12,9 +12,24 @@ import matplotlib.pyplot as plt
 from scipy.sparse.csgraph import floyd_warshall
 from scipy.sparse.csgraph import connected_components
 
-import metropolis_ddm
+from metropolis_ddm import metropolis_ddm_hist
 from numbers import Real, Integral
 from time import time
+
+# TODO: asymmetrix barriers, consideration sets
+def statdist(u, upper_barrier, em):
+    n = len(u)
+    pab = np.zeros((n, n))
+    for a in range(n):
+        for b in range(n):
+            if a == b: continue
+            x = upper_barrier * (u[a] - u[b]) / 2
+            dt = upper_barrier / (u[a] - u[b]) * np.tanh(x)
+            q = 1.0 if em is None else em[a,b]
+            pab[a,b] = np.exp(upper_barrier * u[b]) * q * dt
+    p = sum(pab, 1)
+    p /= sum(p)
+    return p
 
 class Abort(Exception):
     pass
@@ -326,10 +341,14 @@ def run_comparison():
     else:
         print('Exploration matrix:\n%s\n' % explo_matrix_unif(n))
 
-    p = np.exp(upper_barrier*u) / np.sum(np.exp(upper_barrier*u)) # softmax
+    smp = np.exp(upper_barrier*u) / np.sum(np.exp(upper_barrier*u)) # softmax
+    if lower_barrier == upper_barrier:
+        statp = statdist(u, upper_barrier, em)
+    else:
+        statp = smp # TODO fix
 
     runt = time()
-    choice_count = metropolis_ddm.metropolis_ddm_hist(u, lower_barrier, upper_barrier, t, em, num_samples)
+    choice_count = metropolis_ddm_hist(u, lower_barrier, upper_barrier, t, em, num_samples)
     runt = time() - runt
 
     choice_freq = choice_count / np.sum(choice_count)
@@ -338,8 +357,8 @@ def run_comparison():
     print(ts + '\n' + '-'*len(ts) + '\n')
 
     print('Choice count: %s\n' % choice_count)
-    print('Total variation distance: %g\n' % (np.linalg.norm(choice_freq - p, 1) / 2))
-    print('Maximum simulation error: %g' % np.max(np.abs(choice_freq - p)))
+    print('Total variation distance: %g\n' % (np.linalg.norm(choice_freq - statp, 1) / 2))
+    print('Maximum simulation error: %g' % np.max(np.abs(choice_freq - smp)))
 
     # COMPARISON PLOT
 
@@ -350,7 +369,9 @@ def run_comparison():
     ax.set_xticks(a)
     ax.set_xticklabels(labels)
 
-    plt.plot(a, p, label = 'softmax')  # plot softmax888
+    plt.plot(a, smp, label = 'softmax')  # plot softmax
+    if lower_barrier == upper_barrier: # TODO: fix
+        plt.plot(a, statp, label = 'time-adjusted softmax')  # plot limiting dist
 
     plt.plot(a, choice_freq, label = 'simulation') #final choice frequencies LLN for IID copies of algorithm
     plt.legend()

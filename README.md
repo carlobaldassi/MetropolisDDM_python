@@ -42,6 +42,7 @@ For more help, try:
 ```
 In [1]: import metropolis_ddm as mddm
 
-In [2]: mddm.DDMSampler?
-In [2]: mddm.timed_metropolis?
-In [3]: mddm.metropolis_ddm_hist?
+In [2]: mddm.ddm_sample?
+In [3]: mddm.DDMSampler?
+In [5]: mddm.timed_metropolis?
+In [7]: mddm.metropolis_ddm_hist?
